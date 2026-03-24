@@ -65,7 +65,8 @@ public class PaymentController {
   @PreAuthorize("isAuthenticated()")
   @SecurityRequirement(name = "gatewayHeaders")
   @Operation(summary = "Get transaction", description = "Returns the current persisted state of one payment transaction.")
-  public ResponseEntity<ApiResponse<TransactionResponse>> getTransaction(@PathVariable UUID transactionId) {
+  public ResponseEntity<ApiResponse<TransactionResponse>> getTransaction(
+      @PathVariable("transactionId") UUID transactionId) {
     return ResponseEntity.ok(ApiResponse.success(
         "Transaction fetched successfully",
         paymentService.getTransaction(transactionId)));
@@ -76,7 +77,7 @@ public class PaymentController {
   @SecurityRequirement(name = "gatewayHeaders")
   @Operation(summary = "Get transaction by reference", description = "Returns the persisted transaction using the user-facing payment reference.")
   public ResponseEntity<ApiResponse<TransactionResponse>> getTransactionByReference(
-      @PathVariable String transactionReference) {
+      @PathVariable("transactionReference") String transactionReference) {
     return ResponseEntity.ok(ApiResponse.success(
         "Transaction fetched successfully",
         paymentService.getTransactionByReference(transactionReference)));
