@@ -25,6 +25,7 @@ public enum ErrorCode {
   ACCOUNT_LOCKED(HttpStatus.LOCKED, "Account temporarily locked"),
   ACCOUNT_FROZEN(HttpStatus.UNPROCESSABLE_ENTITY, "Account is frozen"),
   IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "Duplicate request detected"),
+  SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Service temporarily unavailable"),
   SAGA_COMPENSATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "Transaction reversal failed"),
   INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error");
 
