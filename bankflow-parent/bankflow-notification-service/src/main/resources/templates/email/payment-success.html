@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body style="font-family: Arial, sans-serif; max-width: 600px; color: #1a202c;">
+  <h2 style="color: #2c5282;">Transfer Successful</h2>
+  <p>Your transfer has been completed successfully.</p>
+  <table style="width:100%; border-collapse:collapse;">
+    <tr>
+      <td style="padding:8px 0;"><strong>Amount</strong></td>
+      <td style="padding:8px 0;" th:text="'INR ' + ${amount}"></td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;"><strong>To Account</strong></td>
+      <td style="padding:8px 0;" th:text="${toAccount}"></td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;"><strong>Reference</strong></td>
+      <td style="padding:8px 0;" th:text="${reference}"></td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;"><strong>Date &amp; Time</strong></td>
+      <td style="padding:8px 0;" th:text="${timestamp}"></td>
+    </tr>
+  </table>
+  <p style="color:#666; font-size:12px;">
+    If you did not initiate this transfer, contact support immediately.
+  </p>
+</body>
+</html>

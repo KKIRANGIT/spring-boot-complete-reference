@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body style="font-family: Arial, sans-serif; max-width: 600px; color: #1a202c;">
+  <h2 style="color: #2f855a;">Welcome to BankFlow</h2>
+  <p>Your new account has been created successfully.</p>
+  <table style="width:100%; border-collapse:collapse;">
+    <tr>
+      <td style="padding:8px 0;"><strong>Account Number</strong></td>
+      <td style="padding:8px 0;" th:text="${accountNumber}"></td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;"><strong>Account Type</strong></td>
+      <td style="padding:8px 0;" th:text="${accountType}"></td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;"><strong>Opening Balance</strong></td>
+      <td style="padding:8px 0;" th:text="'INR ' + ${balance}"></td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;"><strong>Date &amp; Time</strong></td>
+      <td style="padding:8px 0;" th:text="${timestamp}"></td>
+    </tr>
+  </table>
+  <p style="color:#666; font-size:12px;">
+    This mailbox is monitored only for development in MailHog on your local machine.
+  </p>
+</body>
+</html>
