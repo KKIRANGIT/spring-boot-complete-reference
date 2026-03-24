@@ -2,6 +2,7 @@ package com.bankflow.account.service;
 
 import com.bankflow.common.event.AccountCreatedEvent;
 import com.bankflow.common.event.AccountCreditedEvent;
+import com.bankflow.common.event.AccountCreditFailedEvent;
 import com.bankflow.common.event.AccountDebitFailedEvent;
 import com.bankflow.common.event.AccountDebitedEvent;
 import com.bankflow.common.event.AccountReversalCompletedEvent;
@@ -27,37 +28,29 @@ public class AccountEventPublisher {
     this.kafkaTemplate = kafkaTemplate;
   }
 
-  /**
-   * Publishes a new-account event.
-   */
   public void publishAccountCreated(AccountCreatedEvent event) {
     kafkaTemplate.send(KafkaTopics.ACCOUNT_CREATED, event.accountId().toString(), event);
   }
 
-  /**
-   * Publishes a successful debit event.
-   */
   public void publishAccountDebited(AccountDebitedEvent event) {
     kafkaTemplate.send(KafkaTopics.ACCOUNT_DEBITED, event.accountId().toString(), event);
   }
 
-  /**
-   * Publishes a successful credit event.
-   */
   public void publishAccountCredited(AccountCreditedEvent event) {
     kafkaTemplate.send(KafkaTopics.ACCOUNT_CREDITED, event.accountId().toString(), event);
   }
 
   /**
-   * Publishes a failed-debit event with a machine-readable reason.
+   * Publishes a failed-credit event so payment-service can trigger compensation.
    */
+  public void publishAccountCreditFailed(AccountCreditFailedEvent event) {
+    kafkaTemplate.send(KafkaTopics.ACCOUNT_CREDIT_FAILED, keyFrom(event.transactionId()), event);
+  }
+
   public void publishAccountDebitFailed(AccountDebitFailedEvent event) {
     kafkaTemplate.send(KafkaTopics.ACCOUNT_DEBIT_FAILED, keyFrom(event.transactionId()), event);
   }
 
-  /**
-   * Publishes a completed reversal event for saga compensation.
-   */
   public void publishAccountReversalCompleted(AccountReversalCompletedEvent event) {
     kafkaTemplate.send(KafkaTopics.ACCOUNT_REVERSAL_COMPLETED, keyFrom(event.transactionId()), event);
   }

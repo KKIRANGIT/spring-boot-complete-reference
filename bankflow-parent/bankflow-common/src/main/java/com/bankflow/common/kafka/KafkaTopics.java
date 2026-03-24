@@ -16,6 +16,7 @@ public final class KafkaTopics {
 
   public static final String PAYMENT_INITIATED = "bankflow.payment.initiated";
   public static final String ACCOUNT_DEBITED = "bankflow.account.debited";
+  public static final String ACCOUNT_CREDIT_REQUESTED = "bankflow.account.credit.requested";
   public static final String ACCOUNT_CREDITED = "bankflow.account.credited";
   public static final String ACCOUNT_DEBIT_FAILED = "bankflow.account.debit.failed";
   public static final String ACCOUNT_CREDIT_FAILED = "bankflow.account.credit.failed";

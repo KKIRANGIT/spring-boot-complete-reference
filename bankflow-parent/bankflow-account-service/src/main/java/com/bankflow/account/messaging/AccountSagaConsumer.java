@@ -6,12 +6,15 @@ import com.bankflow.account.service.AccountEventPublisher;
 import com.bankflow.account.service.command.CreditAccountCommand;
 import com.bankflow.account.service.command.DebitAccountCommand;
 import com.bankflow.common.cache.CacheKeys;
+import com.bankflow.common.event.AccountCreditFailedEvent;
+import com.bankflow.common.event.AccountCreditRequestedEvent;
 import com.bankflow.common.event.AccountDebitFailedEvent;
 import com.bankflow.common.event.AccountReversalCompletedEvent;
 import com.bankflow.common.event.CompensationRequestedEvent;
 import com.bankflow.common.event.PaymentInitiatedEvent;
 import com.bankflow.common.exception.AccountFrozenException;
 import com.bankflow.common.exception.InsufficientFundsException;
+import com.bankflow.common.exception.ResourceNotFoundException;
 import com.bankflow.common.kafka.KafkaTopics;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -54,9 +57,6 @@ public class AccountSagaConsumer {
     this.redisTemplate = redisTemplate;
   }
 
-  /**
-   * Debits the source account for an initiated payment and publishes the result.
-   */
   @KafkaListener(topics = KafkaTopics.PAYMENT_INITIATED)
   public void handlePaymentInitiated(PaymentInitiatedEvent event, Acknowledgment acknowledgment) {
     String processedKey = CacheKeys.accountProcessed(event.eventId());
@@ -90,8 +90,41 @@ public class AccountSagaConsumer {
   }
 
   /**
-   * Credits money back to the account when a compensation is requested.
+   * Credits the destination account after the source debit succeeds.
    */
+  @KafkaListener(topics = KafkaTopics.ACCOUNT_CREDIT_REQUESTED)
+  public void handleAccountCreditRequested(
+      AccountCreditRequestedEvent event,
+      Acknowledgment acknowledgment) {
+    String processedKey = CacheKeys.accountProcessed(event.eventId());
+    if (Boolean.TRUE.equals(redisTemplate.hasKey(processedKey))) {
+      acknowledgment.acknowledge();
+      return;
+    }
+
+    try {
+      accountCommandService.creditAccount(new CreditAccountCommand(
+          event.toAccountId(),
+          event.amount(),
+          event.transactionId(),
+          null,
+          "Payment credit for transaction " + event.transactionId()));
+      markProcessed(processedKey);
+      acknowledgment.acknowledge();
+    } catch (ResourceNotFoundException ex) {
+      publishCreditFailure(event, "RESOURCE_NOT_FOUND");
+      markProcessed(processedKey);
+      acknowledgment.acknowledge();
+    } catch (IllegalStateException ex) {
+      publishCreditFailure(event, "ACCOUNT_CLOSED");
+      markProcessed(processedKey);
+      acknowledgment.acknowledge();
+    } catch (RuntimeException ex) {
+      log.error("Unexpected failure while crediting destination account for event {}", event.eventId(), ex);
+      throw ex;
+    }
+  }
+
   @KafkaListener(topics = KafkaTopics.COMPENSATION_REQUESTED)
   public void handleCompensationRequested(
       CompensationRequestedEvent event,
@@ -125,6 +158,16 @@ public class AccountSagaConsumer {
         UUID.randomUUID(),
         event.transactionId(),
         event.fromAccountId(),
+        event.amount(),
+        reason,
+        LocalDateTime.now()));
+  }
+
+  private void publishCreditFailure(AccountCreditRequestedEvent event, String reason) {
+    accountEventPublisher.publishAccountCreditFailed(new AccountCreditFailedEvent(
+        UUID.randomUUID(),
+        event.transactionId(),
+        event.toAccountId(),
         event.amount(),
         reason,
         LocalDateTime.now()));
