@@ -46,7 +46,7 @@ public class AccountQueryService {
   /**
    * Returns one account by id, using the five-minute account cache.
    */
-  @Cacheable(value = "accounts", key = "#id.toString()")
+  @Cacheable(value = "accounts", key = "#a0.toString()")
   public AccountResponse getAccountById(UUID id) {
     Account account = accountRepository.findById(id)
         .orElseThrow(() -> new ResourceNotFoundException("Account", "id", id));
@@ -56,7 +56,7 @@ public class AccountQueryService {
   /**
    * Returns the latest balance snapshot using a short-lived cache.
    */
-  @Cacheable(value = "balances", key = "#accountId.toString()")
+  @Cacheable(value = "balances", key = "#a0.toString()")
   public AccountBalanceResponse getBalance(UUID accountId) {
     AccountBalanceView balanceView = accountRepository.findBalanceById(accountId)
         .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
