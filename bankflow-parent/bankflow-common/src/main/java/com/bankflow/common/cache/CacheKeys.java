@@ -19,6 +19,7 @@ public final class CacheKeys {
   public static final String BALANCE_PREFIX = "bankflow:balance:";
   public static final String BLACKLIST_PREFIX = "blacklist:token:";
   public static final String IDEMPOTENCY_PREFIX = "idempotency:";
+  public static final String ACCOUNT_PROCESSED_PREFIX = "account:processed:";
   public static final String NOTIFICATION_PROCESSED_PREFIX = "notification:processed:";
 
   private CacheKeys() {
@@ -30,5 +31,19 @@ public final class CacheKeys {
    */
   public static String account(UUID id) {
     return ACCOUNT_PREFIX + id;
+  }
+
+  /**
+   * Creates the canonical balance cache key.
+   */
+  public static String balance(UUID id) {
+    return BALANCE_PREFIX + id;
+  }
+
+  /**
+   * Creates the canonical idempotency key for account-side saga processing.
+   */
+  public static String accountProcessed(UUID eventId) {
+    return ACCOUNT_PROCESSED_PREFIX + eventId;
   }
 }
