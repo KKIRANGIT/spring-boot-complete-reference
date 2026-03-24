@@ -28,19 +28,54 @@ volumes/
 
 # Build output
 target/
+**/target/
 build/
 out/
 dist/
+*.class
+*.jar
+*.war
+*.ear
+*.original
+
+# Maven and Java build caches
+.m2/
+.mvn/timing.properties
+dependency-reduced-pom.xml
+pom.xml.releaseBackup
+pom.xml.tag
+pom.xml.versionsBackup
+release.properties
+
+# Coverage and static analysis output
+.scannerwork/
+coverage/
+jacoco.exec
+jacoco-report/
 
 # Logs and runtime files
 *.log
 logs/
 tmp/
 temp/
+*.pid
+*.seed
+hs_err_pid*
+replay_pid*
 
 # IDE and OS files
 .idea/
 .vscode/
 *.iml
+.classpath
+.project
+.settings/
+.factorypath
 .DS_Store
 Thumbs.db
+
+# .m2 repository (if you want to ignore local Maven dependencies)
+.m2/repository/
+
+# complete folders to ignore which starts with the .m2
+.m2/

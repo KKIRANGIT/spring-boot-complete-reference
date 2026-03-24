@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: bankflow-payment-service
+
+server:
+  port: ${SERVER_PORT:8083}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

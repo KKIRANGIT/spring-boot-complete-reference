@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: bankflow-account-service
+
+server:
+  port: ${SERVER_PORT:8082}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
