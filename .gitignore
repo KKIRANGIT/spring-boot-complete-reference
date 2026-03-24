@@ -1,0 +1,42 @@
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+*.local
+*.secret
+*.secrets
+secrets/
+
+# Keys, certificates, and keystores
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+
+# Docker and infrastructure overrides
+docker-compose.override.yml
+*.override.yml
+
+# Build output
+target/
+build/
+out/
+dist/
+
+# Logs and runtime files
+*.log
+logs/
+tmp/
+temp/
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

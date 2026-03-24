@@ -1,0 +1,338 @@
+services:
+  # MySQL is the transactional system of record for the core banking domains.
+  # BankFlow uses it to persist identity/auth data, accounts, payments, and notification metadata
+  # in separate schemas while still keeping local development simple on one database server.
+  # No browser UI is exposed for MySQL; verify startup with a SQL client on localhost:3306.
+  # Common issues:
+  # - Windows: Docker Desktop file sharing or antivirus can slow MySQL initialization; wait longer or restart Docker Desktop.
+  # - Mac: low Docker memory can cause repeated restarts during first boot; increase RAM to at least 4 GB.
+  # Spring Boot usage:
+  # - auth-service -> bankflow_auth
+  # - account-service -> bankflow_account
+  # - payment-service -> bankflow_payment
+  # - notification-service -> bankflow_notification
+  mysql:
+    image: mysql:8.0
+    container_name: bankflow-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./config/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Redis provides low-latency caching and ephemeral state for BankFlow.
+  # Use it for OTP/session storage, token blacklists, short-lived payment state, idempotency keys,
+  # rate limiting, and any response caching that keeps the services fast under load.
+  # Verify startup by opening a Redis client against localhost:6379 or by browsing http://localhost:8091.
+  # Common issues:
+  # - Windows: volume permissions can survive old containers; remove the volume if Redis refuses to start.
+  # - Mac: stale Desktop networking can keep the UI from connecting; restart Docker Desktop if 8091 stays blank.
+  # Spring Boot usage:
+  # - auth-service stores login/session or OTP data
+  # - account-service caches account lookups or lock state
+  # - payment-service stores idempotency and workflow state
+  # - api-gateway can apply rate limiting or token lookup
+  redis:
+    image: redis:7-alpine
+    container_name: bankflow-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Kafka is the event backbone for BankFlow.
+  # It carries domain events such as account-created, payment-requested, payment-settled,
+  # notification-dispatch-requested, and audit/security events between independently deployable services.
+  # Verify startup by checking that localhost:9092 is reachable from host applications and http://localhost:8090 loads via Kafka UI.
+  # Common issues:
+  # - Windows: WSL2/Docker Desktop networking can hold on to old listeners; restart Docker Desktop if 9092 is stuck.
+  # - Mac: Kafka is memory-hungry; increase Docker memory if the broker loops during startup.
+  # Spring Boot usage:
+  # - auth-service can publish user lifecycle or security events
+  # - account-service publishes account domain events
+  # - payment-service publishes payment workflow events
+  # - notification-service consumes events and sends emails/SMS/push
+  # - api-gateway may publish audit or request-tracing events
+  # Note:
+  # - This uses dual listeners so host-run Spring Boot apps connect to localhost:9092
+  #   while containerized tools use bankflow-kafka:29092. That is the reliable local-dev setup.
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: bankflow-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID}
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@bankflow-kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://bankflow-kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+
+  # Kafka UI gives you a browser view into topics, partitions, consumer groups, and messages.
+  # It is the fastest way to verify BankFlow events are being published and consumed correctly.
+  # Verify startup at http://localhost:8090.
+  # Common issues:
+  # - Windows: if the page loads but clusters fail, the broker usually advertised the wrong listener; keep the dual-listener Kafka config.
+  # - Mac: browser caches can show stale cluster status after restarts; hard-refresh the page.
+  # Spring Boot usage:
+  # - developers inspect emitted events from auth/account/payment services
+  # - notification-service consumers can be validated by watching topic lag and messages
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: bankflow-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: bankflow-kafka:29092
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/ || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # Redis Commander is an operational UI for browsing Redis keys and values.
+  # It helps confirm that sessions, caches, OTPs, idempotency keys, and rate-limiter entries
+  # are being written by the services exactly as expected during development.
+  # Verify startup at http://localhost:8091.
+  # Common issues:
+  # - Windows: if login fails, confirm the REDIS_PASSWORD value in .env matches the running container.
+  # - Mac: port collisions with existing local tooling on 8091 are common; free the port or remap it.
+  # Spring Boot usage:
+  # - used indirectly for debugging how the microservices interact with Redis
+  redis-ui:
+    image: rediscommander/redis-commander:latest
+    container_name: bankflow-redis-ui
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8091:8081"
+    environment:
+      REDIS_HOSTS: bankflow-redis:bankflow-redis:6379:0:${REDIS_PASSWORD}
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8081/ || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # MailHog is the safe local SMTP sink for BankFlow.
+  # It catches emails from auth and notification flows so password resets, OTPs, alerts,
+  # and transactional messages can be tested without sending real mail.
+  # Verify startup at http://localhost:8025 and point SMTP clients to localhost:1025.
+  # Common issues:
+  # - Windows: corporate security software can intercept local SMTP ports; whitelist Docker Desktop if 1025 is blocked.
+  # - Mac: AirPlay or other tools rarely clash with 8025/1025; remap ports if needed.
+  # Spring Boot usage:
+  # - auth-service sends password reset or verification mail
+  # - notification-service delivers transactional or alert email messages
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: bankflow-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8025/ || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # Prometheus scrapes metrics from every Spring Boot service and keeps the time-series history
+  # that powers live operational dashboards and basic alerting during local development.
+  # Verify startup at http://localhost:9090 and check the Targets page.
+  # Common issues:
+  # - Windows: host.docker.internal usually works, but if targets stay DOWN confirm the apps are running on the host.
+  # - Mac: if metrics stay DOWN after wake-from-sleep, restart Docker Desktop networking or the Prometheus container.
+  # Spring Boot usage:
+  # - all services expose /actuator/prometheus and Prometheus scrapes them for JVM, HTTP, and custom domain metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bankflow-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/-/healthy || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # Grafana is the visualization layer on top of Prometheus.
+  # Use it to build BankFlow dashboards for request rate, error rate, latency, JVM health,
+  # Redis/Kafka behavior, and payment throughput across microservices.
+  # Verify startup at http://localhost:3000 and log in with admin / bankflow_grafana.
+  # Common issues:
+  # - Windows: provisioning mounts can fail if the path does not exist yet; keep the provisioning directory in source control.
+  # - Mac: Safari sometimes caches redirect/login state aggressively; use a hard refresh if the login page misbehaves.
+  # Spring Boot usage:
+  # - consumes Prometheus metrics from all microservices for dashboards and troubleshooting
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bankflow-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # PostgreSQL backs SonarQube because production-like static analysis needs a real database.
+  # SonarQube stores project metadata, analysis history, quality profiles, issues, and rule state here.
+  # No browser UI is exposed for PostgreSQL; verify startup indirectly when SonarQube becomes healthy at http://localhost:9000
+  # or directly with a PostgreSQL client on the internal Docker network.
+  # Common issues:
+  # - Windows: old Postgres data volumes from incompatible versions can block boot; remove sonar-postgres-data if this happens.
+  # - Mac: low disk space often causes silent initialization failures; free space and restart the container.
+  # Spring Boot usage:
+  # - not called by the runtime services directly; it supports code quality analysis for the whole BankFlow codebase
+  sonar-db:
+    image: postgres:15-alpine
+    container_name: bankflow-sonar-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SONAR_DB}
+      POSTGRES_USER: ${SONAR_USER}
+      POSTGRES_PASSWORD: ${SONAR_PASSWORD}
+    volumes:
+      - sonar-postgres-data:/var/lib/postgresql/data
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # SonarQube provides static code analysis, code smells, bug detection, and quality gates for BankFlow.
+  # It is useful once multiple services exist and you want consistent engineering standards across the platform.
+  # Verify startup at http://localhost:9000 and log in with admin / admin on the first run.
+  # Common issues:
+  # - Windows: SonarQube needs more memory than lightweight services; increase Docker Desktop memory if it stays in a restart loop.
+  # - Mac: if the web UI stays unavailable, wait for database migrations to finish or inspect logs for plugin initialization delays.
+  # Spring Boot usage:
+  # - not a runtime dependency; developers run source analysis for auth/account/payment/notification/gateway services here
+  sonarqube:
+    image: sonarqube:community
+    container_name: bankflow-sonarqube
+    restart: unless-stopped
+    depends_on:
+      sonar-db:
+        condition: service_healthy
+    ports:
+      - "9000:9000"
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://bankflow-sonar-db:5432/${SONAR_DB}
+      SONAR_JDBC_USERNAME: ${SONAR_USER}
+      SONAR_JDBC_PASSWORD: ${SONAR_PASSWORD}
+    volumes:
+      - sonar-data:/opt/sonarqube/data
+      - sonar-logs:/opt/sonarqube/logs
+      - sonar-extensions:/opt/sonarqube/extensions
+    networks:
+      - bankflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9000/api/system/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+volumes:
+  mysql-data:
+  redis-data:
+  kafka-data:
+  prometheus-data:
+  grafana-data:
+  sonar-data:
+  sonar-logs:
+  sonar-extensions:
+  sonar-postgres-data:
+
+networks:
+  bankflow-network:
+    driver: bridge
