@@ -104,7 +104,10 @@ public class AuthService {
     }
 
     if (!passwordEncoder.matches(request.password(), user.getPassword())) {
-      handleFailedLogin(user);
+      boolean locked = handleFailedLogin(user);
+      if (locked) {
+        throw new AccountLockedException(user.getUsername(), user.getLockedUntil());
+      }
       throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -179,12 +182,15 @@ public class AuthService {
   }
 
   /** Records a failed login and applies a 30-minute lockout after five failures. */
-  private void handleFailedLogin(User user) {
+  private boolean handleFailedLogin(User user) {
     user.setFailedLoginAttempts(user.getFailedLoginAttempts() + 1);
+    boolean locked = false;
     if (user.getFailedLoginAttempts() >= MAX_FAILED_ATTEMPTS) {
       user.setLockedUntil(LocalDateTime.now().plusMinutes(LOCKOUT_MINUTES));
+      locked = true;
     }
     userRepository.saveAndFlush(user);
+    return locked;
   }
 
   /** Creates and persists a new refresh token for the given user. */
