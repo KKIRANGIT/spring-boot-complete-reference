@@ -22,6 +22,9 @@ id_rsa.pub
 # Docker and infrastructure overrides
 docker-compose.override.yml
 *.override.yml
+docker-data/
+volumes/
+.docker/
 
 # Build output
 target/
@@ -38,5 +41,6 @@ temp/
 # IDE and OS files
 .idea/
 .vscode/
+*.iml
 .DS_Store
 Thumbs.db

@@ -1,0 +1,120 @@
+services:
+  auth-service:
+    build:
+      context: ./bankflow-parent
+      dockerfile: ./bankflow-auth-service/Dockerfile
+    container_name: bankflow-auth-service
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8081
+      DB_HOST: bankflow-mysql
+      DB_PORT: 3306
+      DB_NAME: bankflow_auth
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: bankflow-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: bankflow-kafka:29092
+      MAIL_HOST: bankflow-mailhog
+      MAIL_PORT: 1025
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - bankflow-network
+
+  account-service:
+    build:
+      context: ./bankflow-parent
+      dockerfile: ./bankflow-account-service/Dockerfile
+    container_name: bankflow-account-service
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8082
+      DB_HOST: bankflow-mysql
+      DB_PORT: 3306
+      DB_NAME: bankflow_account
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: bankflow-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: bankflow-kafka:29092
+    networks:
+      - bankflow-network
+
+  payment-service:
+    build:
+      context: ./bankflow-parent
+      dockerfile: ./bankflow-payment-service/Dockerfile
+    container_name: bankflow-payment-service
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8083
+      DB_HOST: bankflow-mysql
+      DB_PORT: 3306
+      DB_NAME: bankflow_payment
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: bankflow-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: bankflow-kafka:29092
+    networks:
+      - bankflow-network
+
+  notification-service:
+    build:
+      context: ./bankflow-parent
+      dockerfile: ./bankflow-notification-service/Dockerfile
+    container_name: bankflow-notification-service
+    restart: unless-stopped
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8084
+      DB_HOST: bankflow-mysql
+      DB_PORT: 3306
+      DB_NAME: bankflow_notification
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: bankflow-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: bankflow-kafka:29092
+      MAIL_HOST: bankflow-mailhog
+      MAIL_PORT: 1025
+    networks:
+      - bankflow-network
+
+  api-gateway:
+    build:
+      context: ./bankflow-parent
+      dockerfile: ./bankflow-api-gateway/Dockerfile
+    container_name: bankflow-api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8080
+      REDIS_HOST: bankflow-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - bankflow-network
+
+networks:
+  bankflow-network:
+    external: true
+    name: bankflow-network

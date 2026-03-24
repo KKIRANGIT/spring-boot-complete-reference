@@ -1,0 +1,84 @@
+{
+  "info": {
+    "name": "BankFlow",
+    "_postman_id": "0d3d0a8d-4c40-4ef1-9a5b-0e4a099e1d01",
+    "description": "Starter Postman collection for BankFlow local development.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"demo\",\n  \"password\": \"demo\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/auth/login",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "Get Account",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:8080/api/accounts/1001",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "accounts", "1001"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Create Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceAccountId\": \"1001\",\n  \"targetAccountId\": \"2002\",\n  \"amount\": 250.00,\n  \"currency\": \"INR\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/payments",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "payments"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
