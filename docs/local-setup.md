@@ -1,42 +1,84 @@
-# Local Setup
+# Local Quick Start
 
-## Startup Order
+## Step 1
+Clone the project and open [bankflow-parent/pom.xml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/pom.xml) in IntelliJ IDEA as the Maven root.
 
-1. Start infrastructure with `start-infra.sh` or `start-infra.bat`.
-2. Build all modules with `mvn -f bankflow-parent/pom.xml clean install`.
-3. Start services from IntelliJ or with `docker compose -f docker-compose.services.yml up --build -d`.
+## Step 2
+Start infrastructure:
 
-## Expected Service Ports
+```bash
+docker compose -f docker-compose.infrastructure.yml up -d
+```
 
-- API Gateway: `8080`
-- Auth Service: `8081`
-- Account Service: `8082`
-- Payment Service: `8083`
-- Notification Service: `8084`
+## Step 3
+Wait until infrastructure is healthy:
 
-## Expected Infrastructure Ports
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+```
 
-- MySQL: `3306`
-- Redis: `6379`
-- Kafka external listener: `9092`
-- Kafka UI: `8090`
-- Redis Commander: `8091`
-- MailHog SMTP: `1025`
-- MailHog UI: `8025`
-- Prometheus: `9090`
-- Grafana: `3000`
-- SonarQube: `9000`
+Expected healthy infra containers:
+- `bankflow-mysql`
+- `bankflow-redis`
+- `bankflow-kafka`
+- `bankflow-mailhog`
+- `bankflow-prometheus`
+- `bankflow-grafana`
 
-## Environment Notes
+## Step 4
+Create IntelliJ run configurations for each Spring Boot service.
 
-- Keep real credentials in `.env`.
-- Commit only `.env.example`.
-- Host-run Spring Boot apps should use `localhost:9092` for Kafka.
-- Container-run Spring Boot apps should use `bankflow-kafka:29092`.
+Common steps for every service:
+1. In IntelliJ, open `Run > Edit Configurations`.
+2. Click `+` and choose `Spring Boot`.
+3. Set `VM options` to `-Dspring.profiles.active=local`.
+4. Add environment variables:
+   `MYSQL_ROOT_PASSWORD=bankflow_root;REDIS_PASSWORD=bankflow_redis;JWT_SECRET=bankflow-local-secret-must-be-32chars`
+5. Apply and repeat for the next service.
 
-## Recommended IntelliJ Workflow
+Per-service values:
+- Auth Service
+  Main class: `com.bankflow.auth.BankflowAuthServiceApplication`
+  Use module: `bankflow-auth-service`
+- Account Service
+  Main class: `com.bankflow.account.BankflowAccountServiceApplication`
+  Use module: `bankflow-account-service`
+- Payment Service
+  Main class: `com.bankflow.payment.BankflowPaymentServiceApplication`
+  Use module: `bankflow-payment-service`
+- Notification Service
+  Main class: `com.bankflow.notification.BankflowNotificationServiceApplication`
+  Use module: `bankflow-notification-service`
+  Optional extra env vars: `MAIL_HOST=localhost;MAIL_PORT=1025`
+- API Gateway
+  Main class: `com.bankflow.gateway.BankflowApiGatewayApplication`
+  Use module: `bankflow-api-gateway`
 
-- Import the parent Maven project.
-- Create one Run/Debug configuration per microservice.
-- Start only the services you are actively working on.
-- Keep Prometheus and MailHog running so metrics and emails are visible during development.
+## Step 5
+Import both Postman files:
+- [BankFlow.postman_collection.json](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/postman/BankFlow.postman_collection.json)
+- [BankFlow.local.postman_environment.json](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/postman/BankFlow.local.postman_environment.json)
+
+## Step 6
+Run the basic flow in order:
+1. `Register User`
+2. `Login`
+3. `Create Account`
+4. Create a second account
+5. `Transfer Payment`
+
+## Step 7
+Open Kafka UI at `http://localhost:8090` and verify the topic `bankflow.payment.initiated` contains the new transfer event.
+
+## Step 8
+Open MailHog at `http://localhost:8025` and verify the notification email appears there.
+
+## Step 9
+Open Grafana at `http://localhost:3000` and confirm the service metrics are visible.
+
+## Optional Docker-only Run
+If you want all five services to run as containers instead of IntelliJ processes, use the merged compose model so `depends_on: condition: service_healthy` can reference the infra services:
+
+```bash
+docker compose -f docker-compose.infrastructure.yml -f docker-compose.services.yml up -d --build
+```

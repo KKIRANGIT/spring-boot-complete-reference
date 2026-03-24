@@ -1,116 +1,210 @@
+# This services compose file is intended to be layered with docker-compose.infrastructure.yml.
+# Use:
+#   docker compose -f docker-compose.infrastructure.yml -f docker-compose.services.yml up -d --build
+# That merged model lets service_healthy depends_on reference mysql/redis/kafka from the infra file.
+
 services:
   auth-service:
     build:
-      context: ./bankflow-parent
-      dockerfile: ./bankflow-auth-service/Dockerfile
+      context: .
+      dockerfile: bankflow-parent/bankflow-auth-service/Dockerfile
     container_name: bankflow-auth-service
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8081:8081"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8081
       DB_HOST: bankflow-mysql
       DB_PORT: 3306
       DB_NAME: bankflow_auth
-      DB_USERNAME: ${MYSQL_USER}
-      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       REDIS_HOST: bankflow-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
-      KAFKA_BOOTSTRAP_SERVERS: bankflow-kafka:29092
-      MAIL_HOST: bankflow-mailhog
-      MAIL_PORT: 1025
       JWT_SECRET: ${JWT_SECRET}
+      LOGGING_FILE_PATH: /app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    volumes:
+      - ./logs/auth-service:/app/logs
     networks:
       - bankflow-network
 
   account-service:
     build:
-      context: ./bankflow-parent
-      dockerfile: ./bankflow-account-service/Dockerfile
+      context: .
+      dockerfile: bankflow-parent/bankflow-account-service/Dockerfile
     container_name: bankflow-account-service
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8082:8082"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8082
       DB_HOST: bankflow-mysql
       DB_PORT: 3306
       DB_NAME: bankflow_account
-      DB_USERNAME: ${MYSQL_USER}
-      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       REDIS_HOST: bankflow-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KAFKA_BOOTSTRAP_SERVERS: bankflow-kafka:29092
+      LOGGING_FILE_PATH: /app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    volumes:
+      - ./logs/account-service:/app/logs
     networks:
       - bankflow-network
 
   payment-service:
     build:
-      context: ./bankflow-parent
-      dockerfile: ./bankflow-payment-service/Dockerfile
+      context: .
+      dockerfile: bankflow-parent/bankflow-payment-service/Dockerfile
     container_name: bankflow-payment-service
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8083:8083"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8083
       DB_HOST: bankflow-mysql
       DB_PORT: 3306
       DB_NAME: bankflow_payment
-      DB_USERNAME: ${MYSQL_USER}
-      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       REDIS_HOST: bankflow-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KAFKA_BOOTSTRAP_SERVERS: bankflow-kafka:29092
+      LOGGING_FILE_PATH: /app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    volumes:
+      - ./logs/payment-service:/app/logs
     networks:
       - bankflow-network
 
   notification-service:
     build:
-      context: ./bankflow-parent
-      dockerfile: ./bankflow-notification-service/Dockerfile
+      context: .
+      dockerfile: bankflow-parent/bankflow-notification-service/Dockerfile
     container_name: bankflow-notification-service
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8084:8084"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      mailhog:
+        condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8084
       DB_HOST: bankflow-mysql
       DB_PORT: 3306
       DB_NAME: bankflow_notification
-      DB_USERNAME: ${MYSQL_USER}
-      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       REDIS_HOST: bankflow-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       KAFKA_BOOTSTRAP_SERVERS: bankflow-kafka:29092
       MAIL_HOST: bankflow-mailhog
       MAIL_PORT: 1025
+      LOGGING_FILE_PATH: /app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8084/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    volumes:
+      - ./logs/notification-service:/app/logs
     networks:
       - bankflow-network
 
   api-gateway:
     build:
-      context: ./bankflow-parent
-      dockerfile: ./bankflow-api-gateway/Dockerfile
+      context: .
+      dockerfile: bankflow-parent/bankflow-api-gateway/Dockerfile
     container_name: bankflow-api-gateway
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      account-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: docker
       SERVER_PORT: 8080
       REDIS_HOST: bankflow-redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      AUTH_SERVICE_URI: http://bankflow-auth-service:8081
+      ACCOUNT_SERVICE_URI: http://bankflow-account-service:8082
+      PAYMENT_SERVICE_URI: http://bankflow-payment-service:8083
+      LOGGING_FILE_PATH: /app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    volumes:
+      - ./logs/api-gateway:/app/logs
     networks:
       - bankflow-network
 
