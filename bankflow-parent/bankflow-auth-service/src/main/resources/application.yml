@@ -1,12 +1,12 @@
 spring:
-  application:
-    name: bankflow-auth-service
-
-server:
-  port: ${SERVER_PORT:8081}
+  profiles:
+    active: local
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,metrics,prometheus,info
+  endpoint:
+    health:
+      show-details: always
