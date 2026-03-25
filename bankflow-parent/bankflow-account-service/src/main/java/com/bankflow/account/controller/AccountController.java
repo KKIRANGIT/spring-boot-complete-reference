@@ -11,6 +11,7 @@ import com.bankflow.account.service.command.CreateAccountCommand;
 import com.bankflow.account.service.command.UpdateAccountStatusCommand;
 import com.bankflow.common.api.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -25,6 +26,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.parameters.P;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -65,6 +67,7 @@ public class AccountController {
       @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "Internal server error")
   })
   public ResponseEntity<ApiResponse<AccountResponse>> createAccount(
+      @Parameter(description = "User id propagated by the API gateway after JWT validation.", required = true)
       @RequestHeader("X-User-Id") UUID userId,
       @Valid @RequestBody CreateAccountRequest request) {
     AccountResponse response = accountCommandService.createAccount(new CreateAccountCommand(
@@ -81,7 +84,15 @@ public class AccountController {
   @PreAuthorize("hasRole('ADMIN') or @accountSecurityService.isOwner(authentication, #id)")
   @SecurityRequirement(name = "gatewayHeaders")
   @Operation(summary = "Get account by id", description = "Returns account details for the owner or an admin.")
-  public ResponseEntity<ApiResponse<AccountResponse>> getAccountById(@PathVariable UUID id) {
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Account returned successfully"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Gateway identity missing or invalid"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Caller is not allowed to view this account"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Account not found"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "Internal server error")
+  })
+  public ResponseEntity<ApiResponse<AccountResponse>> getAccountById(
+      @P("id") @PathVariable UUID id) {
     return ResponseEntity.ok(ApiResponse.success("Account fetched successfully", accountQueryService.getAccountById(id)));
   }
 
@@ -89,7 +100,14 @@ public class AccountController {
   @PreAuthorize("isAuthenticated()")
   @SecurityRequirement(name = "gatewayHeaders")
   @Operation(summary = "Get my accounts", description = "Returns all accounts that belong to the gateway-authenticated user.")
-  public ResponseEntity<ApiResponse<List<AccountResponse>>> getMyAccounts(@RequestHeader("X-User-Id") UUID userId) {
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Accounts returned successfully"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Gateway identity missing or invalid"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "Internal server error")
+  })
+  public ResponseEntity<ApiResponse<List<AccountResponse>>> getMyAccounts(
+      @Parameter(description = "User id propagated by the API gateway after JWT validation.", required = true)
+      @RequestHeader("X-User-Id") UUID userId) {
     return ResponseEntity.ok(ApiResponse.success("Accounts fetched successfully", accountQueryService.getAccountsByUserId(userId)));
   }
 
@@ -97,7 +115,15 @@ public class AccountController {
   @PreAuthorize("hasRole('ADMIN') or @accountSecurityService.isOwner(authentication, #accountId)")
   @SecurityRequirement(name = "gatewayHeaders")
   @Operation(summary = "Get account balance", description = "Returns the current balance using the short-lived balance cache.")
-  public ResponseEntity<ApiResponse<AccountBalanceResponse>> getBalance(@PathVariable UUID accountId) {
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Balance returned successfully"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Gateway identity missing or invalid"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Caller is not allowed to view this balance"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Account not found"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "Internal server error")
+  })
+  public ResponseEntity<ApiResponse<AccountBalanceResponse>> getBalance(
+      @P("accountId") @PathVariable UUID accountId) {
     return ResponseEntity.ok(ApiResponse.success("Balance fetched successfully", accountQueryService.getBalance(accountId)));
   }
 
@@ -105,10 +131,18 @@ public class AccountController {
   @PreAuthorize("hasRole('ADMIN') or @accountSecurityService.isOwner(authentication, #accountId)")
   @SecurityRequirement(name = "gatewayHeaders")
   @Operation(summary = "Get account statement", description = "Returns a paginated statement from the audit-log table.")
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Statement returned successfully"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Invalid page or size parameter"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Gateway identity missing or invalid"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Caller is not allowed to view this statement"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Account not found"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "Internal server error")
+  })
   public ResponseEntity<ApiResponse<Page<AccountStatementEntryResponse>>> getStatement(
-      @PathVariable UUID accountId,
-      @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
+      @P("accountId") @PathVariable UUID accountId,
+      @Parameter(description = "Zero-based page number.") @RequestParam(defaultValue = "0") int page,
+      @Parameter(description = "Number of statement rows per page.") @RequestParam(defaultValue = "20") int size) {
     Pageable pageable = PageRequest.of(page, size);
     return ResponseEntity.ok(ApiResponse.success("Statement fetched successfully", accountQueryService.getAccountStatement(accountId, pageable)));
   }
@@ -117,8 +151,17 @@ public class AccountController {
   @PreAuthorize("hasRole('ADMIN')")
   @SecurityRequirement(name = "gatewayHeaders")
   @Operation(summary = "Update account status", description = "Changes the lifecycle state of an account.")
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Account status updated successfully"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Validation failed"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Gateway identity missing or invalid"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Only admins may update account status"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Account not found"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "Internal server error")
+  })
   public ResponseEntity<ApiResponse<AccountResponse>> updateStatus(
       @PathVariable UUID id,
+      @Parameter(description = "Admin user id propagated by the API gateway.", required = true)
       @RequestHeader("X-User-Id") UUID performedBy,
       @Valid @RequestBody UpdateAccountStatusRequest request) {
     AccountResponse response = accountCommandService.updateAccountStatus(new UpdateAccountStatusCommand(

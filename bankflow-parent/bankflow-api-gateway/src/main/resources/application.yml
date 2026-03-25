@@ -86,9 +86,24 @@ resilience4j:
         recordExceptions:
           - java.io.IOException
           - java.util.concurrent.TimeoutException
+  timelimiter:
+    instances:
+      authService:
+        timeoutDuration: 5s
+      accountService:
+        timeoutDuration: 5s
+      paymentService:
+        timeoutDuration: 5s
 
 management:
   endpoints:
     web:
       exposure:
         include: health,metrics,prometheus,info
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui/index.html
+

@@ -45,9 +45,7 @@ public class KafkaConfig {
   public ConsumerFactory<String, Object> consumerFactory(KafkaProperties kafkaProperties) {
     Map<String, Object> properties = new HashMap<>(kafkaProperties.buildConsumerProperties());
     properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-    properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
     JsonDeserializer<Object> valueDeserializer = new JsonDeserializer<>();
-    valueDeserializer.addTrustedPackages("com.bankflow.common.event");
 
     return new DefaultKafkaConsumerFactory<>(
         properties,
@@ -65,3 +63,5 @@ public class KafkaConfig {
     return factory;
   }
 }
+
+

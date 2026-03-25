@@ -3,9 +3,9 @@ package com.bankflow.payment.security;
 import com.bankflow.common.exception.ResourceNotFoundException;
 import com.bankflow.payment.entity.Transaction;
 import com.bankflow.payment.repository.TransactionRepository;
+import java.util.UUID;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
-import java.util.UUID;
 
 /**
  * Method-security helper for payment ownership checks.
@@ -23,7 +23,9 @@ public class PaymentSecurityService {
   }
 
   public boolean isParticipant(Authentication authentication, UUID transactionId) {
-    if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails user)) {
+    if (authentication == null
+        || transactionId == null
+        || !(authentication.getPrincipal() instanceof CustomUserDetails user)) {
       return false;
     }
 
@@ -33,7 +35,10 @@ public class PaymentSecurityService {
   }
 
   public boolean isParticipantByReference(Authentication authentication, String transactionReference) {
-    if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails user)) {
+    if (authentication == null
+        || transactionReference == null
+        || transactionReference.isBlank()
+        || !(authentication.getPrincipal() instanceof CustomUserDetails user)) {
       return false;
     }
 

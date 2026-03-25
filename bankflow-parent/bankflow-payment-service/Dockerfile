@@ -1,10 +1,16 @@
 FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /app
 
-# Copy pom files first so Docker can reuse the dependency layer until a pom.xml changes.
+# Copy all reactor pom files first so Maven can resolve the full multi-module structure.
+# This keeps dependency downloads cacheable while still letting the parent pom reference every module.
 COPY bankflow-parent/pom.xml bankflow-parent/pom.xml
 COPY bankflow-parent/bankflow-common/pom.xml bankflow-parent/bankflow-common/pom.xml
+COPY bankflow-parent/bankflow-auth-service/pom.xml bankflow-parent/bankflow-auth-service/pom.xml
+COPY bankflow-parent/bankflow-account-service/pom.xml bankflow-parent/bankflow-account-service/pom.xml
 COPY bankflow-parent/bankflow-payment-service/pom.xml bankflow-parent/bankflow-payment-service/pom.xml
+COPY bankflow-parent/bankflow-notification-service/pom.xml bankflow-parent/bankflow-notification-service/pom.xml
+COPY bankflow-parent/bankflow-api-gateway/pom.xml bankflow-parent/bankflow-api-gateway/pom.xml
+COPY bankflow-parent/bankflow-coverage-report/pom.xml bankflow-parent/bankflow-coverage-report/pom.xml
 
 RUN mvn -f bankflow-parent/pom.xml dependency:go-offline -B \
     -pl bankflow-common,bankflow-payment-service -am
