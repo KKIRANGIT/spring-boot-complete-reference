@@ -1,98 +1,204 @@
-# BankFlow Project Reference Guide
+# BankFlow Complete Project Reference Guide
 
-This is the "understand the whole project" guide for BankFlow.
+This guide is for understanding BankFlow as a real system, not just as a collection of files.
 
-It is written for someone who is new to distributed systems, but it does not talk down to you. The goal is simple:
+It is written for someone who may be new to distributed systems, but it stays technically honest. The goal is to answer the natural questions a good engineer asks:
 
-- explain what each part does,
-- explain why it exists,
-- show where it lives in the code,
-- explain when it is used,
-- explain how the pieces talk to each other,
-- explain what problem it prevents,
-- explain what alternatives exist,
-- and explain why this design is a strong fit for BankFlow.
+- What is this part doing?
+- Why does it exist?
+- Where is it implemented?
+- When is it used?
+- How does it work?
+- What problem does it prevent?
+- What alternatives were possible?
+- Why is this design a good fit for BankFlow?
 
-This is not a textbook. Read it like a guided walkthrough from one engineer to another.
+If you read this guide fully, the repository becomes much easier to navigate.
 
-## 1. Start With The Big Picture
+## 1. What BankFlow Really Is
 
-BankFlow is a distributed banking backend split into focused services instead of one large monolith.
+BankFlow is a distributed banking platform built as a set of Spring Boot services.
 
-The core idea is:
+The business responsibilities are split like this:
 
-- `api-gateway` is the only public entry point.
-- `auth-service` owns identity and tokens.
-- `account-service` owns accounts and balances.
-- `payment-service` owns transfer workflow and transaction state.
-- `notification-service` owns customer-facing notifications.
-- `bankflow-common` holds shared contracts, enums, errors, event classes, constants, and utilities.
+- `api-gateway` is the single public entry point.
+- `auth-service` owns users, login, JWT, refresh tokens, and account lockout.
+- `account-service` owns accounts, balances, balance changes, and account audit logs.
+- `payment-service` owns transfer initiation, payment transaction state, idempotency, saga state, and outbox rows.
+- `notification-service` owns asynchronous notifications like payment-success and account-created emails.
+- `bankflow-common` holds shared contracts, errors, events, constants, and shared utility logic.
 
-You can see the module list in [pom.xml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/pom.xml).
+You can see the module layout in [bankflow-parent/pom.xml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/pom.xml).
 
-Why split it this way?
+The most important thing to understand is this:
 
-- Banking domains naturally have different responsibilities.
-- Account balance logic should not be mixed with login logic.
-- Payment workflows are more complex and failure-prone than simple CRUD.
-- Notifications should not slow down the payment path.
-- The gateway is the correct place for internet-facing protection and routing.
+BankFlow is not difficult because it has many entities. It is difficult because it tries to keep money movement correct when requests are retried, services fail, Kafka redelivers, and multiple updates happen at the same time.
 
-Could this have been one monolith?
+That is why the project uses patterns like:
 
-Yes. For a small team or small business flow, a modular monolith is often the best first choice.
+- Saga choreography
+- Outbox
+- Idempotency
+- Optimistic locking
+- CQRS
+- Redis caching
+- JWT blacklisting and refresh-token rotation
+- Kafka retry + DLT
+- Circuit breaker
+- Rate limiting
 
-Why is this microservice design still valid here?
+## 2. How The Repository Is Organized
 
-- BankFlow is intentionally built as a distributed systems learning and portfolio project.
-- The patterns you want to demonstrate, like Saga, Outbox, idempotency, gateway security, and Kafka consumers, make sense only when the system is actually distributed.
-
-So the honest answer is:
-
-This is not "perfect for every company." It is a strong and deliberate fit for a banking-style distributed architecture where correctness, isolation, and resilience matter.
-
-## 2. How To Read The Repository
-
-There are three layers in this repo:
+There are three practical layers.
 
 ### Infrastructure Layer
+
+Files:
 
 - [docker-compose.infrastructure.yml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/docker-compose.infrastructure.yml)
 - [config](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/config)
 
-This layer gives you MySQL, Redis, Kafka, MailHog, Prometheus, Grafana, SonarQube, and PostgreSQL for SonarQube.
+This layer provides:
+
+- MySQL
+- Redis
+- Kafka
+- MailHog
+- Prometheus
+- Grafana
+- SonarQube
+- PostgreSQL for SonarQube
 
 ### Application Layer
 
+Files:
+
 - [bankflow-parent](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent)
 
-This is the actual Java code. The parent Maven module aggregates all services.
+This is the actual Java application code.
 
 ### Developer Experience Layer
+
+Files:
 
 - [README.md](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/README.md)
 - [docs/local-setup.md](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/docs/local-setup.md)
 - [postman](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/postman)
-- [start-infra.bat](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/start-infra.bat)
 - [start-infra.sh](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/start-infra.sh)
+- [start-infra.bat](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/start-infra.bat)
 
-This layer makes the system runnable and testable locally.
+This layer makes the system runnable and easy to demonstrate locally.
 
-## 3. The Core Runtime Story
+## 3. The Runtime Story In One Simple Flow
 
-Here is the simplest way to understand BankFlow:
+The easiest way to understand BankFlow is:
 
-1. A client sends a request to the gateway.
-2. The gateway checks the token and rate limits the request.
-3. The gateway routes the request to the correct internal service.
-4. The service does its local job using MySQL, Redis, or both.
-5. If the job affects other services, it emits Kafka events.
-6. Other services react asynchronously.
-7. Metrics, logs, and health endpoints expose what is happening.
+1. A client sends an HTTP request to the gateway.
+2. The gateway validates the token and adds trusted identity headers.
+3. The gateway routes the request to the correct service.
+4. That service performs local business logic against MySQL, Redis, or both.
+5. If other services need to react, Kafka events are published.
+6. Other services consume those events asynchronously.
+7. Metrics, logs, and dashboards let you inspect what happened.
 
-That model alone will help you understand most of the codebase.
+That runtime model explains most of the project.
 
-## 4. API Gateway: Why It Exists First
+## 4. Why The System Is Split Into Services
+
+The services are split by business responsibility, not just by technical style.
+
+### Auth Service
+
+Main files:
+
+- [AuthController.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/controller/AuthController.java)
+- [AuthService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/service/AuthService.java)
+- [JwtService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/service/JwtService.java)
+
+Why separate it?
+
+- identity rules change independently,
+- auth traffic is different from payment traffic,
+- and security lifecycle logic should not be mixed with balance logic.
+
+### Account Service
+
+Main files:
+
+- [AccountController.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/controller/AccountController.java)
+- [AccountCommandService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/service/AccountCommandService.java)
+- [AccountQueryService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/service/AccountQueryService.java)
+- [Account.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/entity/Account.java)
+
+Why separate it?
+
+- balance correctness is a domain boundary,
+- money mutations need their own rules,
+- and no other service should directly own account balances.
+
+### Payment Service
+
+Main files:
+
+- [PaymentController.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/controller/PaymentController.java)
+- [PaymentService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/service/PaymentService.java)
+- [PaymentSagaService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/service/PaymentSagaService.java)
+- [PaymentSagaConsumer.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/messaging/PaymentSagaConsumer.java)
+
+Why separate it?
+
+- transfer workflow spans multiple systems,
+- it needs its own reliability model,
+- and it should own transaction state, not account-service.
+
+### Notification Service
+
+Main files:
+
+- [NotificationKafkaConsumer.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-notification-service/src/main/java/com/bankflow/notification/messaging/NotificationKafkaConsumer.java)
+- [NotificationIdempotencyService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-notification-service/src/main/java/com/bankflow/notification/service/NotificationIdempotencyService.java)
+- [EmailService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-notification-service/src/main/java/com/bankflow/notification/service/EmailService.java)
+
+Why separate it?
+
+- notifications are side effects,
+- they should not slow down transfers,
+- and retrying email should not block money correctness.
+
+### API Gateway
+
+Main files:
+
+- [application.yml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/resources/application.yml)
+- [JwtAuthenticationFilter.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/java/com/bankflow/gateway/filter/JwtAuthenticationFilter.java)
+- [GatewayJwtService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/java/com/bankflow/gateway/service/GatewayJwtService.java)
+
+Why separate it?
+
+- one public entry point is easier to protect,
+- routing stays centralized,
+- and downstream services stay focused on domain logic.
+
+## 5. Could This Have Been A Monolith?
+
+Yes.
+
+A modular monolith is often the best first architecture for a real startup.
+
+So why is this microservice design still valid?
+
+Because BankFlow is intentionally trying to model distributed-system realities:
+
+- cross-service consistency,
+- event-driven workflows,
+- compensation,
+- outbox reliability,
+- gateway-edge security,
+- and async notification behavior.
+
+Those ideas are much harder to demonstrate honestly in a single-process monolith.
+
+## 6. API Gateway: What, Why, Where, When, How
 
 Main files:
 
@@ -106,63 +212,78 @@ Main files:
 - [CorrelationIdFilter.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/java/com/bankflow/gateway/filter/CorrelationIdFilter.java)
 - [FallbackController.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/java/com/bankflow/gateway/controller/FallbackController.java)
 
-### What it does
+### What
 
-The gateway is the front door.
+The gateway is the public boundary of the platform.
 
 It handles:
 
-- routing,
+- route forwarding,
 - JWT validation,
-- token blacklist checks,
+- access-token blacklist checks,
 - rate limiting,
-- circuit breakers,
-- correlation IDs,
-- and security headers.
+- circuit-breaker behavior,
+- request correlation IDs,
+- and response security headers.
 
-### Why it exists
+### Why
 
-Without a gateway, every service would need to:
+Without a gateway, every service would have to repeat:
 
-- validate JWTs,
-- implement its own rate limiter,
-- handle internet-facing abuse,
-- and duplicate routing logic.
+- token parsing,
+- auth error handling,
+- rate limiting,
+- public-route logic,
+- and edge security behavior.
 
-That creates drift and inconsistency fast.
+That duplication becomes messy very quickly.
 
-### How it works
+### Where
 
-`JwtAuthenticationFilter` checks whether the path is public. If it is not public, it validates the token, checks if it is blacklisted, extracts `userId` and roles, and forwards those as trusted internal headers like `X-User-Id` and `X-User-Roles`.
+The routing and resilience rules are in [application.yml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/resources/application.yml).
 
-That means downstream services do not validate JWTs again. They trust the gateway.
+The JWT path is implemented in [JwtAuthenticationFilter.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/java/com/bankflow/gateway/filter/JwtAuthenticationFilter.java) and [GatewayJwtService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/java/com/bankflow/gateway/service/GatewayJwtService.java).
 
-This is a standard internal-trust pattern in microservices.
+### When
 
-### Why this is a good fit here
+The gateway runs on every incoming request from the client. It is always the first application component in the request path.
 
-For BankFlow, this is the right place to put edge security because:
+### How
 
-- only one component faces the internet,
+The filter checks whether the path is public. If it is not public, it:
+
+1. reads the `Authorization` header,
+2. validates the JWT,
+3. checks whether the token is blacklisted,
+4. extracts the user ID and roles,
+5. forwards them as trusted internal headers such as `X-User-Id` and `X-User-Roles`.
+
+That design lets internal services focus on authorization and business logic instead of repeating token parsing.
+
+### Why this is a good fit
+
+For BankFlow, the gateway is the right place for shared protection because:
+
+- there is one public entry point,
 - policies stay consistent,
-- and downstream services stay simpler.
+- and internal services stay simpler.
 
 ### Alternative
 
-Alternative: every service validates JWT itself.
+Alternative: make every service validate JWT itself.
 
-Why not do that here?
+Why not here?
 
-- more duplicated code,
-- more chances for drift,
-- more security policy inconsistency,
-- and more work every time auth rules change.
+- duplicated code,
+- duplicated crypto work,
+- more configuration drift,
+- harder to change auth policy centrally.
 
-### Important honesty
+### Honest caveat
 
-This trust model is good inside a controlled network. In a production zero-trust network, you would often add mTLS or service identity so headers cannot be spoofed by an internal attacker.
+This header-trust model is acceptable inside a controlled internal network. In a stricter production environment, you would often add mTLS or service identity so internal spoofing is harder.
 
-## 5. Auth Service: Identity, Login, and Token Lifecycle
+## 7. Auth Service: Identity And Token Lifecycle
 
 Main files:
 
@@ -172,96 +293,108 @@ Main files:
 - [User.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/entity/User.java)
 - [RefreshToken.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/entity/RefreshToken.java)
 - [Role.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/entity/Role.java)
-- [SecurityConfig.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/config/SecurityConfig.java)
 
-### What it does
+### What
 
 Auth service owns:
 
-- user registration,
+- registration,
 - login,
-- access token issuance,
-- refresh token rotation,
+- JWT access tokens,
+- refresh tokens,
 - logout,
+- logout from all devices,
+- user roles,
+- failed-login tracking,
+- lockout window logic.
+
+### Why
+
+Auth is a separate problem from money movement. Keeping them together usually makes both worse.
+
+This separation helps because:
+
+- auth logic changes often,
+- auth traffic has different characteristics,
+- and password/token lifecycle is a security problem, not an account-balance problem.
+
+### Where
+
+The business logic is centered in [AuthService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/service/AuthService.java).
+
+JWT generation and blacklist logic live in [JwtService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/service/JwtService.java).
+
+### When
+
+This service is used during:
+
+- register,
+- login,
+- refresh,
+- logout,
+- profile lookup,
+- and any future user security lifecycle event.
+
+### How
+
+Login works like this:
+
+1. find user by username or email,
+2. check active status,
+3. check lock window,
+4. unlock if lock window expired,
+5. compare password using BCrypt,
+6. increment failure count on bad password,
+7. lock after repeated failures,
+8. reset counters on success,
+9. create access token,
+10. create DB-backed refresh token,
+11. return both to client.
+
+### Why refresh tokens are stored in DB
+
+Because access tokens are stateless and short-lived, while refresh tokens need lifecycle control.
+
+The DB storage gives BankFlow:
+
+- revocation,
+- rotation,
+- expiry,
 - logout-all-devices,
-- account lockout after failed logins,
-- and current user profile retrieval.
+- and theft detection support.
 
-### Why it is separate
+### Why `jti` matters
 
-Authentication is a different problem from account balance management.
+The JWT includes `jti` so one exact access token can be blacklisted in Redis.
 
-If auth and balance were in the same service:
+Without `jti`, token-level revocation is far less precise.
 
-- security code and money code get mixed,
-- changes become risky,
-- and scaling identity traffic becomes harder.
+### Why this is a good fit
 
-Keeping auth separate is one of the cleanest boundaries in the whole platform.
+This design is strong because it balances:
 
-### How login works in BankFlow
-
-`AuthService.login(...)`:
-
-1. finds the user by username or email,
-2. checks whether the user is active,
-3. checks whether the account is locked,
-4. auto-unlocks if the lock window already expired,
-5. compares the BCrypt password hash,
-6. increments failed attempts on bad password,
-7. locks the account after repeated failures,
-8. resets counters on success,
-9. creates JWT access token,
-10. creates DB-backed refresh token,
-11. returns both to the client.
-
-### Why refresh tokens are in the DB
-
-Access tokens are stateless JWTs. Once issued, they cannot be individually revoked unless you add blacklist state.
-
-Refresh tokens are therefore stored in MySQL so BankFlow can:
-
-- revoke them,
-- rotate them,
-- expire them,
-- and kill all sessions if needed.
-
-That is why [RefreshToken.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/entity/RefreshToken.java) matters.
-
-### Why JWT includes `jti`
-
-`jti` is the token ID. BankFlow uses it in [JwtService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-auth-service/src/main/java/com/bankflow/auth/service/JwtService.java) to blacklist one specific access token in Redis.
-
-Without `jti`, you cannot blacklist one token cleanly.
-
-### Why this design is strong
-
-This auth design is strong because it mixes:
-
-- stateless fast access tokens,
+- fast stateless access tokens,
 - revocable refresh tokens,
-- Redis blacklist for early logout,
-- and rotation to detect token theft.
-
-That combination is more realistic than a toy "just issue JWT and forget about it" auth setup.
+- Redis blacklist support,
+- and realistic account lockout behavior.
 
 ### Alternatives
 
-Alternative: session-based auth with server-side sessions only.
+Alternative: pure server-side sessions.
 
 Why not here?
 
-- it is less aligned with gateway + microservice edge design,
-- and it does not demonstrate modern token lifecycle patterns.
+- valid for many apps,
+- but less aligned with distributed gateway-based architecture.
 
-Alternative: opaque access tokens with introspection.
+Alternative: opaque tokens with introspection.
 
 Why not here?
 
 - stronger central control,
-- but slower and more infrastructure-heavy for this local-first project.
+- but more infrastructure cost for this project.
 
-## 6. Account Service: The Source of Truth for Balances
+## 8. Account Service: Money State, Concurrency, And Audit
 
 Main files:
 
@@ -274,108 +407,97 @@ Main files:
 - [CacheConfig.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/config/CacheConfig.java)
 - [AccountSecurityService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/security/AccountSecurityService.java)
 
-### What it does
+### What
 
 Account service owns:
 
 - account creation,
 - account number generation,
-- balance debit,
-- balance credit,
-- balance read,
-- account status changes,
-- and immutable-style audit records of balance change.
+- debit,
+- credit,
+- balance lookup,
+- account status updates,
+- statement data,
+- audit logs.
 
-### Why it must be separate
+### Why
 
-This service is where money state lives.
+This service is the source of truth for account balance and account status.
 
 That means:
 
-- it must be conservative,
-- it must be concurrency-safe,
-- it must maintain an audit trail,
-- and it must not let other services update balances directly.
+- no other service should directly update balances,
+- auditability must exist,
+- money math must be exact,
+- concurrent updates must be safe.
 
-That is why payment-service does not edit account tables. It asks account-service to do it through events.
+### Where
 
-### Why `BigDecimal` matters
+Write logic is in [AccountCommandService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/service/AccountCommandService.java).
 
-The explanation in [Account.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/entity/Account.java) is important:
+Read logic is in [AccountQueryService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/service/AccountQueryService.java).
 
-- `double` is wrong for money,
-- floating point introduces precision drift,
-- and banking systems must preserve exact decimal correctness.
+### When
 
-If you only remember one Java-money rule, remember this:
+This service is used whenever:
 
-Never use floating point for money.
+- a user opens an account,
+- a balance is checked,
+- a transfer needs debit or credit,
+- an administrator changes account status,
+- or a statement is requested.
 
-### Why `@Version` matters
+### How
 
-`@Version` on [Account.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/entity/Account.java) stops stale concurrent writes.
+Two design choices matter most here.
 
-This is one of the most important correctness protections in the whole project.
+First, money is stored as `BigDecimal` in [Account.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/entity/Account.java), because floating point values are unsafe for money.
 
-### Why CQRS exists here
+Second, `@Version` is used on `Account` for optimistic locking. That means stale concurrent writes fail instead of silently overwriting each other.
 
-The account domain splits naturally into:
+### Why CQRS is used
 
-- command side: write logic in [AccountCommandService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/service/AccountCommandService.java)
-- query side: read logic in [AccountQueryService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/service/AccountQueryService.java)
+The service separates write operations and read operations because they want different things:
 
-Why?
+- writes need fresh authoritative state,
+- reads want speed and can use cache.
 
-- writes must be fresh and authoritative,
-- reads can be cached.
-
-That separation is not just "clean code." It protects correctness.
+That is why [AccountCommandService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/service/AccountCommandService.java) and [AccountQueryService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/service/AccountQueryService.java) are separated.
 
 ### Why audit logs exist
 
-[AccountAuditLog.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/entity/AccountAuditLog.java) exists because every balance change in banking should be traceable.
+[AccountAuditLog.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/entity/AccountAuditLog.java) records balance-affecting actions because every banking mutation should be explainable later.
 
-This is not an optional nice-to-have.
+Without audit logs, you can tell what the current balance is, but not how it got there.
 
-If an auditor asks:
+### Why this is a good fit
 
-- who changed the balance,
-- when it happened,
-- by how much,
-- and why,
+This design is strong because it combines:
 
-the service must be able to answer.
-
-### Why this design is strong
-
-This is a strong banking service design because it combines:
-
-- exact money arithmetic,
-- optimistic locking,
-- audit logs,
-- CQRS,
-- cache invalidation,
-- and ownership-based security.
+- exact money representation,
+- concurrency protection,
+- auditability,
+- ownership-based authorization,
+- and selective read caching.
 
 ### Alternatives
 
-Alternative: let payment-service update account balances directly.
+Alternative: let payment-service update balances directly.
 
 Why not?
 
-- it breaks ownership,
-- couples payment to account persistence,
-- and weakens domain boundaries.
+- breaks domain ownership,
+- creates tighter coupling,
+- makes correctness harder to reason about.
 
-Alternative: use pessimistic DB locks.
+Alternative: use pessimistic locking.
 
 Why not here?
 
-- stronger blocking,
-- lower concurrency,
-- and less elegant for a retry-based local banking demo.
+- valid in some systems,
+- but more blocking and less elegant than optimistic retry for this project.
 
-## 7. Payment Service: The Heart of the Distributed Workflow
+## 9. Payment Service: Distributed Transfer Logic
 
 Main files:
 
@@ -388,92 +510,112 @@ Main files:
 - [OutboxEvent.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/entity/OutboxEvent.java)
 - [OutboxPublisher.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/service/OutboxPublisher.java)
 
-### What it does
+### What
 
 Payment service owns:
 
 - transfer initiation,
-- idempotency,
-- durable payment transaction state,
-- saga state,
-- outbox rows,
-- and response to account-service events.
+- transaction state,
+- idempotency checks,
+- outbox row creation,
+- saga status changes,
+- reaction to debit success, debit failure, credit failure, and reversal completion.
 
-### Why it is the central workflow service
+### Why
 
-Payment is where the business transaction begins.
+This is the service where a user action becomes a durable business transfer process.
 
 It is the right place to own:
 
-- transaction reference,
-- request validation,
-- transfer lifecycle,
+- the transfer reference,
+- the initiated amount,
 - failure reason,
-- and compensation state.
+- lifecycle status,
+- and the logic that drives the whole transfer.
 
-### Why Saga is needed
+### Where
 
-A transfer touches multiple services:
+Normal transfer entry starts in [PaymentService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/service/PaymentService.java).
 
-- payment-service,
-- account-service,
-- and notification-service.
+Saga reactions happen in [PaymentSagaConsumer.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/messaging/PaymentSagaConsumer.java) and [PaymentSagaService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/service/PaymentSagaService.java).
 
-One local DB transaction cannot cover all of them.
+### When
 
-That is why BankFlow uses saga choreography.
+This service is used during:
 
-### Why the outbox exists here
+- transfer request creation,
+- payment lookup,
+- saga progression,
+- compensation,
+- and duplicate-request handling.
 
-Payment-service creates the most important cross-service events in the platform.
+### How
 
-That means it is the service most exposed to the dual write problem.
+`PaymentService.initiateTransfer(...)`:
 
-So this is exactly where the Outbox pattern belongs.
+1. checks Redis for the idempotency key,
+2. validates request,
+3. creates the `Transaction`,
+4. creates the matching `OutboxEvent`,
+5. stores the response in Redis,
+6. returns pending transfer state.
 
-### Why idempotency exists here
+The actual event publication is not done inline. It is done later by [OutboxPublisher.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/service/OutboxPublisher.java).
 
-Payments are the worst place to accept duplicate retries.
+### Why Saga is used
 
-If a user retries because the network timed out, the correct behavior is:
+A transfer spans multiple services and databases. One normal SQL transaction cannot safely cover the whole thing.
 
-- same business outcome,
-- same response shape,
-- no second transfer.
+So BankFlow uses Saga choreography:
 
-That is what `PaymentService.initiateTransfer(...)` does.
+- initiate,
+- debit source,
+- request credit,
+- complete on success,
+- compensate on failure.
 
-### Why this design is strong
+### Why Outbox is used
 
-This service is strong because it does not assume the world is reliable.
+Because saving DB state and publishing to Kafka are two separate systems. That is the dual write problem.
 
-It is built around the fact that:
+BankFlow solves it by storing both `Transaction` and `OutboxEvent` in one local DB transaction.
 
-- retries happen,
-- Kafka can redeliver,
-- services can crash,
-- credit can fail after debit succeeds,
-- and users still expect money safety.
+### Why idempotency is used
+
+Payment retries are normal. Duplicate charging is unacceptable.
+
+So the first request and the retry should produce the same business result, not two transfers.
+
+### Why this is a good fit
+
+This design is strong because it is built for failure, not just success.
+
+It expects:
+
+- user retries,
+- Kafka redelivery,
+- service crashes,
+- and compensation scenarios.
 
 ### Alternatives
 
-Alternative: synchronous payment workflow over REST only.
+Alternative: synchronous REST-only workflow.
 
 Why not here?
 
 - tighter coupling,
-- less resilience,
-- and hard failure if one service is temporarily unavailable.
+- lower resilience,
+- harder recovery if one dependency is down.
 
-Alternative: orchestration engine instead of choreography.
+Alternative: 2-phase commit.
 
 Why not here?
 
-- could be valid,
-- but more moving parts,
-- and choreography keeps the portfolio architecture more event-driven and service-owned.
+- too heavy,
+- bad fit across heterogeneous systems,
+- rarely the preferred modern answer for service-level banking workflows.
 
-## 8. Notification Service: Async Side Effects Done Safely
+## 10. Notification Service: Side Effects Without Blocking Transfers
 
 Main files:
 
@@ -483,64 +625,67 @@ Main files:
 - [NotificationLogService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-notification-service/src/main/java/com/bankflow/notification/service/NotificationLogService.java)
 - [EmailService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-notification-service/src/main/java/com/bankflow/notification/service/EmailService.java)
 
-### What it does
+### What
 
-Notification service listens to Kafka events and sends customer-facing notifications.
+Notification service consumes Kafka events and turns them into customer-facing side effects such as emails.
 
-Right now the local focus is email via MailHog.
+### Why
 
-### Why it is separate
+Notifications should not sit inside the critical path of money movement.
 
-Notifications are side effects.
+If email sending is slow or broken:
 
-They should not block:
+- the transfer should still be correct,
+- the payment should still complete,
+- and notification can be retried later.
 
-- login success,
-- account creation,
-- or payment completion.
+That is exactly why this service is separate.
 
-If email infrastructure is slow or broken, the main financial transaction should still complete.
+### Where
 
-### Why manual ack is important
+Kafka retry and dead-letter behavior are configured in [KafkaConsumerConfig.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-notification-service/src/main/java/com/bankflow/notification/config/KafkaConsumerConfig.java).
 
-In [KafkaConsumerConfig.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-notification-service/src/main/java/com/bankflow/notification/config/KafkaConsumerConfig.java), manual acknowledgment means the message is treated as consumed only after processing succeeds.
+Email rendering and sending happen in [EmailService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-notification-service/src/main/java/com/bankflow/notification/service/EmailService.java).
 
-That is exactly what you want for reliability.
+### When
 
-### Why DLT exists
+This service is used after business events occur:
 
-Some messages will fail repeatedly.
+- payment completed,
+- payment reversed,
+- account created.
 
-When that happens, you do not want:
+### How
 
-- infinite retries,
-- blocked partitions,
-- or hidden failure.
+The consumer:
 
-So BankFlow sends the message to a dead-letter topic after retries are exhausted.
+1. reads Kafka message,
+2. checks idempotency in Redis,
+3. tries to send notification,
+4. logs the result,
+5. acknowledges only after successful processing.
 
-That is mature behavior, even in local architecture.
+If processing keeps failing, the message goes to a dead-letter topic instead of retrying forever.
 
-### Why this design is strong
+### Why manual ack matters
 
-This service demonstrates an important engineering maturity point:
+If Kafka committed the message before processing completed, a crash could lose the notification.
 
-the main business transaction and the notification side effect are deliberately decoupled.
+Manual ack avoids that.
 
-That is the correct default unless the side effect is legally part of the main commit.
+### Why DLT matters
 
-## 9. bankflow-common: Shared Contracts Without Shared Databases
+Poison messages should not loop forever or block healthy traffic. DLT gives failed events a controlled place to land.
 
-Main areas:
+### Why this is a good fit
 
-- shared error handling,
-- shared enums,
-- shared event payloads,
-- shared constants,
-- shared response wrapper,
-- shared masking utility.
+This is a strong design because it treats notifications as important, but not as part of the financial correctness boundary.
 
-Useful files:
+That is exactly the right mental model.
+
+## 11. Shared Contracts In bankflow-common
+
+Main files:
 
 - [ApiResponse.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-common/src/main/java/com/bankflow/common/api/ApiResponse.java)
 - [ErrorCode.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-common/src/main/java/com/bankflow/common/error/ErrorCode.java)
@@ -549,151 +694,155 @@ Useful files:
 - [CacheKeys.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-common/src/main/java/com/bankflow/common/cache/CacheKeys.java)
 - [DataMaskingUtil.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-common/src/main/java/com/bankflow/common/util/DataMaskingUtil.java)
 
-### Why it exists
+### What
 
-Every microservice architecture hits this question:
+This module holds contracts that multiple services should share safely:
 
-what can be shared safely?
+- response shape,
+- error codes,
+- event payloads,
+- enums,
+- topic names,
+- cache keys,
+- masking utilities.
 
-BankFlow shares:
+### Why
 
-- contracts,
-- not persistence.
+In microservices, some things should be shared and some should not.
 
-That is the correct line.
+Good things to share:
 
-You do not want a shared business database.  
-You do want shared event classes, error codes, and utility contracts.
+- message contracts,
+- constants,
+- error enums,
+- utility types.
 
-## 10. Security Model Across The Whole Platform
+Bad things to share:
 
-The security story is layered.
+- database tables,
+- direct repository access,
+- cross-service persistence logic.
+
+BankFlow shares contracts, not data ownership. That is the correct line.
+
+## 12. Security Model Across The Whole Platform
+
+Security in BankFlow is layered on purpose.
 
 ### Gateway layer
 
-Handled in gateway:
+Handled by the gateway:
 
 - JWT validation,
-- revocation check,
+- token blacklist check,
 - rate limiting,
-- circuit breaking,
-- response security headers,
-- correlation ID propagation.
+- circuit breaker behavior,
+- response headers,
+- correlation IDs.
 
 ### Service layer
 
 Handled inside services:
 
-- method-level authorization using `@PreAuthorize`,
+- object-level authorization with `@PreAuthorize`,
 - ownership checks like [AccountSecurityService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-account-service/src/main/java/com/bankflow/account/security/AccountSecurityService.java),
 - participant checks like [PaymentSecurityService.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-payment-service/src/main/java/com/bankflow/payment/security/PaymentSecurityService.java),
-- input validation,
-- log masking,
-- no sensitive `toString()` exposure,
-- and no stack traces in client responses.
+- DTO validation,
+- data masking,
+- suppressed stack traces in client responses.
 
-### Why layered security matters
+### Why both layers matter
 
-If you protect only the route and not the object, an authenticated user can still access another user's resource.
+Because "authenticated" is not the same as "authorized to see this specific account or transaction."
 
-That is why method-level security exists in addition to gateway authentication.
+The gateway proves identity. The service still enforces ownership.
 
-## 11. Observability: How You Know The System Is Healthy
+That is a strong design.
 
-BankFlow includes:
+## 13. Observability: How You Know The System Is Healthy
+
+Main parts:
+
+- Prometheus scrape config:
+  [config/prometheus/prometheus.yml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/config/prometheus/prometheus.yml)
+- Grafana provisioning:
+  [config/grafana/provisioning](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/config/grafana/provisioning)
+- correlation ID propagation:
+  [CorrelationIdFilter.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/java/com/bankflow/gateway/filter/CorrelationIdFilter.java)
+
+### Why it matters
+
+Distributed systems fail in distributed ways.
+
+Without:
 
 - metrics,
+- dashboards,
 - health endpoints,
-- Prometheus scraping,
-- Grafana dashboards,
-- correlation IDs,
-- and SonarQube for code quality.
+- and logs tied together by a correlation ID,
 
-This is important because distributed systems fail in distributed ways.
+you are mostly guessing when something breaks.
 
-You cannot debug them well with "print line 1, print line 2" logging.
+BankFlow includes observability early, which is exactly the right habit.
 
-The main observability setup lives across:
+## 14. Testing Philosophy
 
-- [config/prometheus/prometheus.yml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/config/prometheus/prometheus.yml)
-- [config/grafana/provisioning](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/config/grafana/provisioning)
-- Micrometer usage in service classes
-- [CorrelationIdFilter.java](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/bankflow-api-gateway/src/main/java/com/bankflow/gateway/filter/CorrelationIdFilter.java)
+BankFlow uses a mix of:
 
-## 12. Testing Philosophy in BankFlow
+- unit tests for fast feedback,
+- integration tests where real infrastructure matters,
+- concurrency tests where correctness depends on simultaneous execution.
 
-The project uses three useful levels:
+Why this is good:
 
-### Unit tests
+- unit tests keep feedback fast,
+- integration tests catch environment-sensitive logic,
+- concurrency tests prove correctness beyond simple method-level testing.
 
-Fast and isolated.  
-Examples:
+That mix is much stronger than relying on only one test style.
 
-- auth service tests
-- account command/query tests
-- payment service and outbox tests
+## 15. Why This Design Is Strong Without Pretending It Is Universal
 
-### Integration tests with Testcontainers
+This is the honest summary.
 
-Used where realistic infrastructure matters:
+BankFlow is a strong distributed banking design because it intentionally solves the failure modes that matter in financial systems:
 
-- auth controller integration test
-- account concurrency integration test
-- payment saga integration test
+- duplicate requests,
+- stale concurrent writes,
+- cross-service consistency gaps,
+- consumer crashes,
+- downstream outages,
+- stale caches,
+- weak token lifecycle,
+- poor observability.
 
-### Why that mix is good
+But that does not mean every company should start with this architecture.
 
-Only unit tests would miss real concurrency and infrastructure behavior.  
-Only integration tests would be slow and painful.
+A modular monolith is still a very good choice for many teams.
 
-So BankFlow uses both.
+Why is this architecture still the right one for BankFlow?
 
-That is the correct balance.
+Because the purpose of BankFlow is to model distributed-system banking behavior and show the patterns required to make that safe.
 
-## 13. Why This Design Is Strong, Without Pretending It Is Universal
+For that goal, this architecture is a very good fit.
 
-Here is the honest engineering summary:
+## 16. How To Read The Code If You Are New
 
-This design is strong for BankFlow because it intentionally demonstrates the failure-handling patterns that matter in a distributed banking platform:
-
-- auth isolation,
-- exact money arithmetic,
-- optimistic locking,
-- CQRS,
-- Redis caching with eviction,
-- saga choreography,
-- outbox reliability,
-- idempotency,
-- Kafka retry/DLT,
-- gateway protection,
-- and full observability.
-
-But that does not mean every real-world product should start this way.
-
-A startup with one team and one product could absolutely begin with a modular monolith.
-
-Why is this still a very good BankFlow design?
-
-Because the project goal is not only to move money in one process.  
-It is to model the engineering realities of distributed financial systems.
-
-And for that goal, this architecture is well chosen.
-
-## 14. The One Paragraph Explanation You Should Be Able To Say Out Loud
-
-“BankFlow is a distributed banking platform where the gateway protects the public edge, auth-service manages identities and token lifecycle, account-service owns balances and audit-safe money state, payment-service owns transfer workflow using saga plus outbox plus idempotency, notification-service handles async customer communication through Kafka, Redis supports caching and short-lived state, MySQL stores durable domain data, and observability is built in through Prometheus, Grafana, and correlation IDs. The architecture is deliberately split so correctness, resilience, and service ownership stay clear.”
-
-## 15. If You Are New, Read The Project In This Order
+Read the repo in this order:
 
 1. [README.md](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/README.md)
 2. [docker-compose.infrastructure.yml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/docker-compose.infrastructure.yml)
 3. [bankflow-parent/pom.xml](/d:/Tutorials/springboot-projects/examples/spring-boot-complete-reference/bankflow-parent/pom.xml)
-4. gateway `application.yml` and filters
-5. auth controller + service + JWT service
-6. account entity + command/query services
-7. payment transaction + outbox + saga files
-8. notification Kafka consumer + email service
+4. gateway route/security files
+5. auth service
+6. account service
+7. payment service
+8. notification service
 9. tests
 10. observability config
 
-If you follow that order, the repo makes much more sense.
+That order reduces confusion a lot.
+
+## 17. One Paragraph Summary You Should Be Able To Say Out Loud
+
+"BankFlow is a distributed banking platform where the gateway protects the public edge, auth-service manages identity and token lifecycle, account-service owns balances and audit-safe account state, payment-service owns transfer workflow using saga plus outbox plus idempotency, notification-service handles asynchronous customer communication, Redis stores fast-changing cache and workflow state, MySQL stores durable business data, and observability is built in through metrics, dashboards, and correlation IDs. The project is designed around correctness under failure, not just successful requests."
