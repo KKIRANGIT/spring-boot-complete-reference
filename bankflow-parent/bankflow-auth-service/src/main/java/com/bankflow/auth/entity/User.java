@@ -24,25 +24,10 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-/**
- * Auth user aggregate persisted in the {@code users} table.
- *
- * <p>Plain English: this entity stores who the user is, how they sign in, which roles they have,
- * and whether they are currently locked out.
- *
- * <p>Design decision: roles are loaded eagerly because security decisions happen during request
- * authentication and should not trigger lazy-loading surprises outside a transaction.
- *
- * <p>Bug prevented: the optimistic lock {@code version} field protects failed-login increments from
- * race conditions when multiple bad login attempts hit the same user concurrently.
- *
- * <p>Interview question answered: "How do you model an authentication user entity that supports
- * role-based access and account lockout safely?"
- */
 @Getter
 @Setter
 @NoArgsConstructor
-@ToString(exclude = "roles")
+@ToString(exclude = {"password", "roles"})
 @Entity
 @Table(name = "users")
 @EntityListeners(AuditingEntityListener.class)
@@ -62,10 +47,7 @@ public class User {
   private String password;
 
   @ManyToMany(fetch = FetchType.EAGER)
-  @JoinTable(
-      name = "user_roles",
-      joinColumns = @JoinColumn(name = "user_id"),
-      inverseJoinColumns = @JoinColumn(name = "role_id"))
+  @JoinTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))
   private Set<Role> roles = new HashSet<>();
 
   @Column(nullable = false)

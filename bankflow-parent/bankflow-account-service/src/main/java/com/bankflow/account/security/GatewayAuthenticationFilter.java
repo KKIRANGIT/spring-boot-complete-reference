@@ -15,24 +15,12 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * Trusts gateway-stamped identity headers for internal service-to-service authentication.
- *
- * <p>Plain English: account-service does not validate JWTs itself; it accepts the user id and role
- * headers that the API gateway sets after internet-facing authentication succeeds.
- *
- * <p>Security issue prevented: without a dedicated filter, every controller would need to parse
- * headers manually and the service would drift into inconsistent authentication behavior.
- */
 @Component
 public class GatewayAuthenticationFilter extends OncePerRequestFilter {
 
   private static final String USER_ID_HEADER = "X-User-Id";
   private static final String USER_ROLES_HEADER = "X-User-Roles";
 
-  /**
-   * Builds an authenticated security context from gateway headers once per request.
-   */
   @Override
   protected void doFilterInternal(
       HttpServletRequest request,
@@ -48,8 +36,9 @@ public class GatewayAuthenticationFilter extends OncePerRequestFilter {
       try {
         UUID userId = UUID.fromString(userIdHeader);
         List<SimpleGrantedAuthority> authorities = parseAuthorities(request.getHeader(USER_ROLES_HEADER));
+        CustomUserDetails principal = new CustomUserDetails(userId, authorities);
         UsernamePasswordAuthenticationToken authentication =
-            new UsernamePasswordAuthenticationToken(userId.toString(), null, authorities);
+            new UsernamePasswordAuthenticationToken(principal, null, authorities);
         authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         SecurityContextHolder.getContext().setAuthentication(authentication);
       } catch (IllegalArgumentException ex) {

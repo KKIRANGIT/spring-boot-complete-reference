@@ -18,12 +18,14 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class PaymentService {
 
   private final TransactionRepository transactionRepository;
@@ -44,14 +46,7 @@ public class PaymentService {
       StringRedisTemplate redisTemplate,
       ObjectMapper objectMapper,
       @Value("${payment.idempotency.ttl-hours:24}") long idempotencyTtlHours) {
-    this(
-        transactionRepository,
-        paymentTransactionWriter,
-        paymentMapper,
-        redisTemplate,
-        objectMapper,
-        new SimpleMeterRegistry(),
-        idempotencyTtlHours);
+    this(transactionRepository, paymentTransactionWriter, paymentMapper, redisTemplate, objectMapper, new SimpleMeterRegistry(), idempotencyTtlHours);
   }
 
   @Autowired
@@ -86,6 +81,10 @@ public class PaymentService {
   }
 
   public TransferResponse initiateTransfer(TransferRequest request, String idempotencyKey) {
+    return initiateTransfer(request, idempotencyKey, null);
+  }
+
+  public TransferResponse initiateTransfer(TransferRequest request, String idempotencyKey, UUID initiatedByUserId) {
     if (idempotencyKey == null || idempotencyKey.isBlank()) {
       throw new ValidationException("Idempotency-Key header is required");
     }
@@ -105,7 +104,7 @@ public class PaymentService {
 
     validateTransferRequest(request);
 
-    Transaction transaction = paymentTransactionWriter.createPendingTransfer(request, idempotencyKey);
+    Transaction transaction = paymentTransactionWriter.createPendingTransfer(request, idempotencyKey, initiatedByUserId);
     paymentsInitiated.increment();
     TransferResponse response = paymentMapper.toTransferResponse(transaction);
     cacheTransferResponse(redisKey, response);
@@ -127,7 +126,7 @@ public class PaymentService {
     if (transaction.getCreatedAt() == null) {
       return;
     }
-    // P99 matters more than averages because tail latency exposes the slowest real users.
+    // Monitor P99 instead of averages because one 10-second payment barely moves the mean but is obvious in tail latency.
     paymentDuration.record(Duration.between(transaction.getCreatedAt(), completedAt));
   }
 

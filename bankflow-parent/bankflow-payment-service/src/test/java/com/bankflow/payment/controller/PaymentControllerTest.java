@@ -57,6 +57,7 @@ class PaymentControllerTest {
   void initiateTransfer_shouldReturnAccepted() throws Exception {
     // Arrange
     UUID transactionId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
     TransferRequest request = new TransferRequest(
         UUID.randomUUID(),
         UUID.randomUUID(),
@@ -72,12 +73,13 @@ class PaymentControllerTest {
         "INR",
         LocalDateTime.now());
 
-    when(paymentService.initiateTransfer(eq(request), eq("idem-controller"))).thenReturn(response);
+    when(paymentService.initiateTransfer(eq(request), eq("idem-controller"), eq(userId))).thenReturn(response);
 
     // Act + Assert
     // This catches contract regressions where the controller returns the wrong HTTP status or wraps
     // the payload differently than the frontend expects.
     mockMvc.perform(post("/api/v1/payments/transfers")
+            .header("X-User-Id", userId)
             .header("Idempotency-Key", "idem-controller")
             .contentType(MediaType.APPLICATION_JSON)
             .content(objectMapper.writeValueAsString(request)))

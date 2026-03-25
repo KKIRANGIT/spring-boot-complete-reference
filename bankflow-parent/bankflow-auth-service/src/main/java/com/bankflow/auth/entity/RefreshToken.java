@@ -17,24 +17,10 @@ import lombok.ToString;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-/**
- * Persisted refresh token record.
- *
- * <p>Plain English: this table tracks long-lived refresh tokens so they can be rotated and revoked.
- *
- * <p>Design decision: refresh tokens live in MySQL because JWT access tokens are stateless and
- * cannot be individually revoked once issued.
- *
- * <p>Security issue prevented: storing refresh tokens allows session revocation after theft,
- * password reset, or "logout all devices" events.
- *
- * <p>Interview question answered: "Why do you store refresh tokens in a database if access tokens
- * are stateless JWTs?"
- */
 @Getter
 @Setter
 @NoArgsConstructor
-@ToString(exclude = "user")
+@ToString(exclude = {"token", "user"})
 @Entity
 @Table(name = "refresh_tokens")
 @EntityListeners(AuditingEntityListener.class)

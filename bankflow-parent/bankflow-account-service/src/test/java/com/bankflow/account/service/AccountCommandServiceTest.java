@@ -28,6 +28,7 @@ import com.bankflow.common.event.AccountDebitedEvent;
 import com.bankflow.common.exception.AccountFrozenException;
 import com.bankflow.common.exception.InsufficientFundsException;
 import com.bankflow.common.kafka.KafkaTopics;
+import com.bankflow.common.util.DataMaskingUtil;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -377,20 +378,27 @@ class AccountCommandServiceTest {
     }
 
     @Bean
+    DataMaskingUtil dataMaskingUtil() {
+      return new DataMaskingUtil();
+    }
+
+    @Bean
     AccountCommandService accountCommandService(
         AccountRepository accountRepository,
         AccountAuditLogRepository accountAuditLogRepository,
         AccountNumberGenerator accountNumberGenerator,
         AccountEventPublisher accountEventPublisher,
         AccountViewMapper accountViewMapper,
-        CacheManager cacheManager) {
+        CacheManager cacheManager,
+        DataMaskingUtil dataMaskingUtil) {
       return new AccountCommandService(
           accountRepository,
           accountAuditLogRepository,
           accountNumberGenerator,
           accountEventPublisher,
           accountViewMapper,
-          cacheManager);
+          cacheManager,
+          dataMaskingUtil);
     }
   }
 }

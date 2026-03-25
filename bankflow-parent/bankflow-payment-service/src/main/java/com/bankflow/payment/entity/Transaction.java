@@ -20,15 +20,6 @@ import lombok.ToString;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-/**
- * Payment transaction aggregate for a money transfer saga.
- *
- * <p>Plain English: this stores the durable business record a user expects to see in their payment
- * history while the saga moves through debit, credit, or compensation steps.
- *
- * <p>Design decision: idempotency key is stored in MySQL as a unique field so Redis is not the only
- * defense against duplicate transfer requests after a restart or cache loss.
- */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -46,6 +37,9 @@ public class Transaction {
 
   @Column(nullable = false, unique = true, length = 120)
   private String idempotencyKey;
+
+  @Column
+  private UUID initiatedByUserId;
 
   @Column(nullable = false)
   private UUID fromAccountId;

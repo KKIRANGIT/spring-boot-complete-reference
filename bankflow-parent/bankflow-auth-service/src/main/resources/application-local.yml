@@ -1,5 +1,9 @@
 server:
   port: ${SERVER_PORT:8081}
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
 
 spring:
   datasource:
@@ -7,11 +11,9 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:${MYSQL_ROOT_PASSWORD}}
     hikari:
-      # 10 connections is enough for local development. Production sizing follows workload and hardware.
       maximum-pool-size: 10
   jpa:
     hibernate:
-      # Local only. Production should use Flyway/Liquibase migrations instead of ddl-auto updates.
       ddl-auto: update
     show-sql: false
     defer-datasource-initialization: true

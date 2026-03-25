@@ -26,8 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -49,9 +48,9 @@ import org.springframework.stereotype.Service;
  * in a Spring Boot microservice?"
  */
 @Service
+@Slf4j
 public class AuthService {
 
-  private static final Logger log = LoggerFactory.getLogger(AuthService.class);
   private static final int MAX_FAILED_ATTEMPTS = 5;
   private static final int LOCKOUT_MINUTES = 30;
 

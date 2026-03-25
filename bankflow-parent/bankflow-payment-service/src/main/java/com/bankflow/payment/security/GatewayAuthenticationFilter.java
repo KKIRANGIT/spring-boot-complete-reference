@@ -15,12 +15,6 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * Trusts gateway-stamped identity headers for internal payment-service requests.
- *
- * <p>Plain English: payment-service does not validate JWTs itself; it consumes `X-User-Id` and
- * `X-User-Roles` after the API gateway has already authenticated the caller.
- */
 @Component
 public class GatewayAuthenticationFilter extends OncePerRequestFilter {
 
@@ -41,11 +35,10 @@ public class GatewayAuthenticationFilter extends OncePerRequestFilter {
     if (SecurityContextHolder.getContext().getAuthentication() == null) {
       try {
         UUID userId = UUID.fromString(userIdHeader);
+        List<SimpleGrantedAuthority> authorities = parseAuthorities(request.getHeader(USER_ROLES_HEADER));
+        CustomUserDetails principal = new CustomUserDetails(userId, authorities);
         UsernamePasswordAuthenticationToken authentication =
-            new UsernamePasswordAuthenticationToken(
-                userId.toString(),
-                null,
-                parseAuthorities(request.getHeader(USER_ROLES_HEADER)));
+            new UsernamePasswordAuthenticationToken(principal, null, authorities);
         authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         SecurityContextHolder.getContext().setAuthentication(authentication);
       } catch (IllegalArgumentException ex) {

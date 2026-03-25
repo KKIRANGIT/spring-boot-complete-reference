@@ -8,12 +8,10 @@ spring:
     username: ${DB_USERNAME:${MYSQL_USER:root}}
     password: ${DB_PASSWORD:${MYSQL_ROOT_PASSWORD:bankflow_root}}
     hikari:
-      # Ten connections is enough for local development and avoids wasting memory on a laptop.
       maximum-pool-size: 10
   jpa:
     open-in-view: false
     hibernate:
-      # Local development convenience only. Production should use Flyway or Liquibase migrations.
       ddl-auto: update
     show-sql: false
     properties:
@@ -40,11 +38,14 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     listener:
-      # Manual ack means Kafka offsets are committed only after the saga step finishes safely.
       ack-mode: manual_immediate
 
 server:
   port: ${SERVER_PORT:8082}
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
 
 cache:
   account:

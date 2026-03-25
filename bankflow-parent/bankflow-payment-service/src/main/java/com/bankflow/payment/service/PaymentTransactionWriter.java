@@ -15,12 +15,6 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Transactional writer for the transfer row plus its matching outbox row.
- *
- * <p>Plain English: this bean exists so the HTTP-facing payment service can cache the response only
- * after the database commit succeeds.
- */
 @Service
 public class PaymentTransactionWriter {
 
@@ -42,10 +36,16 @@ public class PaymentTransactionWriter {
 
   @Transactional
   public Transaction createPendingTransfer(TransferRequest request, String idempotencyKey) {
+    return createPendingTransfer(request, idempotencyKey, null);
+  }
+
+  @Transactional
+  public Transaction createPendingTransfer(TransferRequest request, String idempotencyKey, UUID initiatedByUserId) {
     Transaction transaction = new Transaction();
     transaction.setId(UUID.randomUUID());
     transaction.setTransactionReference(transactionReferenceGenerator.generate());
     transaction.setIdempotencyKey(idempotencyKey);
+    transaction.setInitiatedByUserId(initiatedByUserId);
     transaction.setFromAccountId(request.fromAccountId());
     transaction.setToAccountId(request.toAccountId());
     transaction.setAmount(request.amount());
@@ -75,8 +75,6 @@ public class PaymentTransactionWriter {
   }
 
   private String normalizeCurrency(String currency) {
-    return currency == null || currency.isBlank()
-        ? "INR"
-        : currency.trim().toUpperCase(Locale.ROOT);
+    return currency == null || currency.isBlank() ? "INR" : currency.trim().toUpperCase(Locale.ROOT);
   }
 }
