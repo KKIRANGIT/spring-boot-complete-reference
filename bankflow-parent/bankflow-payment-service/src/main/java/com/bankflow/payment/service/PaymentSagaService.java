@@ -22,26 +22,23 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Transactional saga state machine for payment-service.
- *
- * <p>Plain English: each Kafka callback delegates here so transaction state changes and outbox row
- * creation happen in one database transaction.
- */
 @Service
 public class PaymentSagaService {
 
   private final TransactionRepository transactionRepository;
   private final OutboxEventRepository outboxEventRepository;
   private final OutboxEventFactory outboxEventFactory;
+  private final PaymentService paymentService;
 
   public PaymentSagaService(
       TransactionRepository transactionRepository,
       OutboxEventRepository outboxEventRepository,
-      OutboxEventFactory outboxEventFactory) {
+      OutboxEventFactory outboxEventFactory,
+      PaymentService paymentService) {
     this.transactionRepository = transactionRepository;
     this.outboxEventRepository = outboxEventRepository;
     this.outboxEventFactory = outboxEventFactory;
+    this.paymentService = paymentService;
   }
 
   @Transactional
@@ -76,9 +73,10 @@ public class PaymentSagaService {
       return false;
     }
 
+    LocalDateTime completedAt = LocalDateTime.now();
     transaction.setStatus(TransactionStatus.COMPLETED);
     transaction.setSagaStatus(SagaStatus.COMPLETED);
-    transaction.setCompletedAt(LocalDateTime.now());
+    transaction.setCompletedAt(completedAt);
     transaction.setFailureReason(null);
     transactionRepository.save(transaction);
 
@@ -90,11 +88,13 @@ public class PaymentSagaService {
         transaction.getToAccountId(),
         transaction.getAmount(),
         transaction.getCurrency(),
-        LocalDateTime.now());
+        completedAt);
     outboxEventRepository.save(outboxEventFactory.createTransactionOutboxEvent(
         transaction.getId(),
         KafkaTopics.PAYMENT_COMPLETED,
         paymentCompletedEvent));
+
+    paymentService.recordPaymentCompleted(transaction, completedAt);
     return true;
   }
 
@@ -125,6 +125,8 @@ public class PaymentSagaService {
         transaction.getId(),
         KafkaTopics.PAYMENT_FAILED,
         paymentFailedEvent));
+
+    paymentService.recordPaymentFailed();
     return true;
   }
 

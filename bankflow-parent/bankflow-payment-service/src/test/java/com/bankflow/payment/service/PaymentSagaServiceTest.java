@@ -2,6 +2,7 @@ package com.bankflow.payment.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,12 +33,6 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/**
- * Unit tests for {@link PaymentSagaService}.
- *
- * <p>Plain English: these tests prove each saga callback updates payment state and writes the next
- * durable outbox event in the same step.
- */
 @ExtendWith(MockitoExtension.class)
 class PaymentSagaServiceTest {
 
@@ -46,6 +41,9 @@ class PaymentSagaServiceTest {
 
   @Mock
   private OutboxEventRepository outboxEventRepository;
+
+  @Mock
+  private PaymentService paymentService;
 
   @Captor
   private ArgumentCaptor<Transaction> transactionCaptor;
@@ -56,7 +54,6 @@ class PaymentSagaServiceTest {
   @Test
   @DisplayName("Handling ACCOUNT_DEBITED should move the saga to ACCOUNT_DEBITED and create the credit-request outbox event")
   void handleAccountDebited_shouldUpdateSagaStatusAndCreateCreditRequestedEvent() {
-    // Arrange
     PaymentSagaService paymentSagaService = newService();
     Transaction transaction = startedTransaction();
     when(transactionRepository.findById(transaction.getId())).thenReturn(Optional.of(transaction));
@@ -69,12 +66,8 @@ class PaymentSagaServiceTest {
         new BigDecimal("700.00"),
         LocalDateTime.now());
 
-    // Act
     boolean handled = paymentSagaService.recordAccountDebited(event);
 
-    // Assert
-    // This catches the saga bug where the source account is debited but payment-service forgets to
-    // request the destination credit, leaving the transfer half-finished forever.
     verify(transactionRepository).save(transactionCaptor.capture());
     verify(outboxEventRepository).save(outboxEventCaptor.capture());
 
@@ -87,7 +80,6 @@ class PaymentSagaServiceTest {
   @Test
   @DisplayName("Handling ACCOUNT_CREDITED should mark the transaction completed and emit PAYMENT_COMPLETED")
   void handleAccountCredited_shouldMarkTransactionCompleted() {
-    // Arrange
     PaymentSagaService paymentSagaService = newService();
     Transaction transaction = startedTransaction();
     transaction.setSagaStatus(SagaStatus.ACCOUNT_DEBITED);
@@ -101,12 +93,11 @@ class PaymentSagaServiceTest {
         new BigDecimal("800.00"),
         LocalDateTime.now());
 
-    // Act
     boolean handled = paymentSagaService.recordAccountCredited(event);
 
-    // Assert
     verify(transactionRepository).save(transactionCaptor.capture());
     verify(outboxEventRepository).save(outboxEventCaptor.capture());
+    verify(paymentService).recordPaymentCompleted(org.mockito.ArgumentMatchers.eq(transaction), org.mockito.ArgumentMatchers.any(LocalDateTime.class));
 
     Transaction savedTransaction = transactionCaptor.getValue();
     assertThat(handled).isTrue();
@@ -119,7 +110,6 @@ class PaymentSagaServiceTest {
   @Test
   @DisplayName("Handling ACCOUNT_DEBIT_FAILED should fail the transaction and publish PAYMENT_FAILED")
   void handleDebitFailed_shouldMarkTransactionFailed() {
-    // Arrange
     PaymentSagaService paymentSagaService = newService();
     Transaction transaction = startedTransaction();
     when(transactionRepository.findById(transaction.getId())).thenReturn(Optional.of(transaction));
@@ -132,12 +122,11 @@ class PaymentSagaServiceTest {
         "INSUFFICIENT_FUNDS",
         LocalDateTime.now());
 
-    // Act
     boolean handled = paymentSagaService.recordDebitFailed(event);
 
-    // Assert
     verify(transactionRepository).save(transactionCaptor.capture());
     verify(outboxEventRepository).save(outboxEventCaptor.capture());
+    verify(paymentService).recordPaymentFailed();
 
     assertThat(handled).isTrue();
     assertThat(transactionCaptor.getValue().getStatus()).isEqualTo(TransactionStatus.FAILED);
@@ -149,7 +138,6 @@ class PaymentSagaServiceTest {
   @Test
   @DisplayName("Handling ACCOUNT_CREDIT_FAILED should start compensation and persist a compensation-request outbox event")
   void handleCreditFailed_shouldSetSagaToCompensatingAndSaveCompensationEvent() {
-    // Arrange
     PaymentSagaService paymentSagaService = newService();
     Transaction transaction = startedTransaction();
     transaction.setSagaStatus(SagaStatus.ACCOUNT_DEBITED);
@@ -163,10 +151,8 @@ class PaymentSagaServiceTest {
         "ACCOUNT_CLOSED",
         LocalDateTime.now());
 
-    // Act
     boolean handled = paymentSagaService.recordCreditFailed(event);
 
-    // Assert
     verify(transactionRepository).save(transactionCaptor.capture());
     verify(outboxEventRepository).save(outboxEventCaptor.capture());
 
@@ -179,7 +165,6 @@ class PaymentSagaServiceTest {
   @Test
   @DisplayName("Handling ACCOUNT_REVERSAL_COMPLETED should mark the transaction reversed and compensated")
   void handleReversalCompleted_shouldSetTransactionReversedAndCompensated() {
-    // Arrange
     PaymentSagaService paymentSagaService = newService();
     Transaction transaction = startedTransaction();
     transaction.setSagaStatus(SagaStatus.COMPENSATING);
@@ -193,10 +178,8 @@ class PaymentSagaServiceTest {
         new BigDecimal("1000.00"),
         LocalDateTime.now());
 
-    // Act
     boolean handled = paymentSagaService.recordReversalCompleted(event);
 
-    // Assert
     verify(transactionRepository).save(transactionCaptor.capture());
     verify(outboxEventRepository).save(outboxEventCaptor.capture());
 
@@ -211,7 +194,6 @@ class PaymentSagaServiceTest {
   @Test
   @DisplayName("Looking up a missing transaction during saga handling should raise a not-found exception")
   void missingTransaction_shouldThrowResourceNotFoundException() {
-    // Arrange
     PaymentSagaService paymentSagaService = newService();
     UUID transactionId = UUID.randomUUID();
     when(transactionRepository.findById(transactionId)).thenReturn(Optional.empty());
@@ -224,7 +206,6 @@ class PaymentSagaServiceTest {
         new BigDecimal("90.00"),
         LocalDateTime.now());
 
-    // Act + Assert
     assertThatThrownBy(() -> paymentSagaService.recordAccountDebited(event))
         .isInstanceOf(ResourceNotFoundException.class);
   }
@@ -233,7 +214,8 @@ class PaymentSagaServiceTest {
     return new PaymentSagaService(
         transactionRepository,
         outboxEventRepository,
-        new OutboxEventFactory(new ObjectMapper().registerModule(new JavaTimeModule())));
+        new OutboxEventFactory(new ObjectMapper().registerModule(new JavaTimeModule())),
+        paymentService);
   }
 
   private Transaction startedTransaction() {

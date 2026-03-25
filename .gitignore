@@ -29,6 +29,8 @@ volumes/
 # Build output
 target/
 **/target/
+bin/
+**/bin/
 build/
 out/
 dist/

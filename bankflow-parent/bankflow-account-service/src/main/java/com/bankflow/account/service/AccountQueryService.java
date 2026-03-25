@@ -8,24 +8,22 @@ import com.bankflow.account.repository.AccountAuditLogRepository;
 import com.bankflow.account.repository.AccountBalanceView;
 import com.bankflow.account.repository.AccountRepository;
 import com.bankflow.common.exception.ResourceNotFoundException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * CQRS read-side service for account queries.
- *
- * <p>Plain English: this service handles all read operations and decides which queries are cacheable
- * and which must always hit the database.
- *
- * <p>Interview question answered: "How do you separate read and write concerns in a CQRS account
- * service with Redis caching?"
- */
 @Service
 @Transactional(readOnly = true)
 public class AccountQueryService {
@@ -33,29 +31,61 @@ public class AccountQueryService {
   private final AccountRepository accountRepository;
   private final AccountAuditLogRepository accountAuditLogRepository;
   private final AccountViewMapper accountViewMapper;
+  private final CacheManager cacheManager;
+  private final Counter cacheHits;
+  private final Counter cacheMisses;
 
   public AccountQueryService(
       AccountRepository accountRepository,
       AccountAuditLogRepository accountAuditLogRepository,
       AccountViewMapper accountViewMapper) {
+    this(
+        accountRepository,
+        accountAuditLogRepository,
+        accountViewMapper,
+        new ConcurrentMapCacheManager("accounts", "balances"),
+        new SimpleMeterRegistry());
+  }
+
+  @Autowired
+  public AccountQueryService(
+      AccountRepository accountRepository,
+      AccountAuditLogRepository accountAuditLogRepository,
+      AccountViewMapper accountViewMapper,
+      CacheManager cacheManager,
+      MeterRegistry meterRegistry) {
     this.accountRepository = accountRepository;
     this.accountAuditLogRepository = accountAuditLogRepository;
     this.accountViewMapper = accountViewMapper;
+    this.cacheManager = cacheManager;
+    this.cacheHits = Counter.builder("bankflow.accounts.cache.hits")
+        .description("Account details cache hits")
+        .register(meterRegistry);
+    this.cacheMisses = Counter.builder("bankflow.accounts.cache.misses")
+        .description("Account details cache misses")
+        .register(meterRegistry);
   }
 
-  /**
-   * Returns one account by id, using the five-minute account cache.
-   */
-  @Cacheable(value = "accounts", key = "#a0.toString()")
   public AccountResponse getAccountById(UUID id) {
+    Cache accountCache = cacheManager.getCache("accounts");
+    if (accountCache != null) {
+      AccountResponse cachedResponse = accountCache.get(id.toString(), AccountResponse.class);
+      if (cachedResponse != null) {
+        cacheHits.increment();
+        return cachedResponse;
+      }
+    }
+
+    cacheMisses.increment();
     Account account = accountRepository.findById(id)
         .orElseThrow(() -> new ResourceNotFoundException("Account", "id", id));
-    return accountViewMapper.toAccountResponse(account);
+    AccountResponse response = accountViewMapper.toAccountResponse(account);
+    if (accountCache != null) {
+      accountCache.put(id.toString(), response);
+    }
+    return response;
   }
 
-  /**
-   * Returns the latest balance snapshot using a short-lived cache.
-   */
   @Cacheable(value = "balances", key = "#a0.toString()")
   public AccountBalanceResponse getBalance(UUID accountId) {
     AccountBalanceView balanceView = accountRepository.findBalanceById(accountId)
@@ -68,18 +98,12 @@ public class AccountQueryService {
         LocalDateTime.now());
   }
 
-  /**
-   * Returns all accounts for one user and intentionally bypasses caching.
-   */
   public List<AccountResponse> getAccountsByUserId(UUID userId) {
     return accountRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
         .map(accountViewMapper::toAccountResponse)
         .toList();
   }
 
-  /**
-   * Returns the latest statement lines directly from the audit table.
-   */
   public Page<AccountStatementEntryResponse> getAccountStatement(UUID accountId, Pageable pageable) {
     accountRepository.findById(accountId)
         .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
