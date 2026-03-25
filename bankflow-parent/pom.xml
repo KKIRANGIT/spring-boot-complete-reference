@@ -17,6 +17,7 @@
     <module>bankflow-payment-service</module>
     <module>bankflow-notification-service</module>
     <module>bankflow-api-gateway</module>
+    <module>bankflow-coverage-report</module>
   </modules>
 
   <properties>
@@ -34,6 +35,7 @@
     <maven.failsafe.plugin.version>3.5.2</maven.failsafe.plugin.version>
     <jacoco.maven.plugin.version>0.8.12</jacoco.maven.plugin.version>
     <sonar.maven.plugin.version>5.0.0.4389</sonar.maven.plugin.version>
+    <jacoco.check.skip>false</jacoco.check.skip>
   </properties>
 
   <dependencyManagement>
@@ -189,6 +191,7 @@
                 <goal>check</goal>
               </goals>
               <configuration>
+                <skip>${jacoco.check.skip}</skip>
                 <!-- Fail the build if coverage drops below 80%. -->
                 <rules>
                   <rule>
