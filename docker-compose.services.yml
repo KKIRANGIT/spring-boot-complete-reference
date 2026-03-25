@@ -210,5 +210,4 @@ services:
 
 networks:
   bankflow-network:
-    external: true
     name: bankflow-network
