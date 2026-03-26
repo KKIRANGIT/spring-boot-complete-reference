@@ -9,18 +9,26 @@ CONTAINERS=(
   "bankflow-mysql"
   "bankflow-redis"
   "bankflow-kafka"
-  "bankflow-kafka-ui"
-  "bankflow-redis-ui"
   "bankflow-mailhog"
   "bankflow-prometheus"
   "bankflow-grafana"
   "bankflow-sonar-db"
   "bankflow-sonarqube"
+  "bankflow-auth-service"
+  "bankflow-account-service"
+  "bankflow-payment-service"
+  "bankflow-notification-service"
+  "bankflow-api-gateway"
+  "bankflow-kafka-ui"
+  "bankflow-redis-ui"
 )
 
-docker compose -f docker-compose.infrastructure.yml up -d
+docker compose \
+  -f docker-compose.infrastructure.yml \
+  -f docker-compose.services.yml \
+  up -d --build
 
-echo "Waiting for infrastructure services to be healthy..."
+echo "Waiting for BankFlow services to be healthy..."
 
 for container in "${CONTAINERS[@]}"; do
   printf "  - %s" "${container}"
@@ -34,11 +42,14 @@ done
 
 cat <<'EOF'
 
-BankFlow infrastructure is ready.
+BankFlow full stack is ready.
 
-MySQL:           localhost:3306
-Redis:           localhost:6379
-Kafka broker:    localhost:9092
+Gateway:         http://localhost:8080
+Gateway Swagger: http://localhost:8080/swagger-ui/index.html
+Auth Swagger:    http://localhost:8081/swagger-ui/index.html
+Account Swagger: http://localhost:8082/swagger-ui/index.html
+Payment Swagger: http://localhost:8083/swagger-ui/index.html
+Notify Swagger:  http://localhost:8084/swagger-ui/index.html
 Kafka UI:        http://localhost:8090
 Redis Commander: http://localhost:8091
 MailHog UI:      http://localhost:8025
